@@ -17,6 +17,9 @@
   let editTags = [];
   let editAcItems = [];
   let editAcActive = -1;
+  let tagSortOrder = 'recent'; // 'recent' | 'name' | 'count'
+  let tagListExpanded = false;
+  const TAG_LIMIT = 5;
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
 
@@ -106,11 +109,47 @@
     allCount.textContent = allBookmarks.length;
     pinnedCount.textContent = allBookmarks.filter(b => b.pinned).length;
 
-    tagFilterList.innerHTML = '';
+    // Build counts and recency per tag
     const tagCounts = {};
-    allBookmarks.forEach(b => b.tags.forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+    const tagRecency = {};
+    allBookmarks.forEach(b => {
+      const ts = b.updatedAt || b.createdAt || 0;
+      b.tags.forEach(t => {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+        if (!tagRecency[t] || ts > tagRecency[t]) tagRecency[t] = ts;
+      });
+    });
 
-    [...allTags].sort().forEach(tag => {
+    // Sort tags according to current tagSortOrder
+    const sorted = [...allTags].sort((a, b) => {
+      if (tagSortOrder === 'count') return (tagCounts[b] || 0) - (tagCounts[a] || 0);
+      if (tagSortOrder === 'name')  return a.localeCompare(b);
+      // 'recent': most recently used first
+      return (tagRecency[b] || 0) - (tagRecency[a] || 0);
+    });
+
+    const total = sorted.length;
+    const visible = tagListExpanded ? sorted : sorted.slice(0, TAG_LIMIT);
+
+    tagFilterList.innerHTML = '';
+
+    // Sort controls
+    const sortBar = document.createElement('div');
+    sortBar.className = 'tag-sort-bar';
+    ['recent', 'name', 'count'].forEach(order => {
+      const btn = document.createElement('button');
+      btn.className = 'tag-sort-btn' + (tagSortOrder === order ? ' active' : '');
+      btn.textContent = order === 'recent' ? 'Recent' : order === 'name' ? 'Name' : 'Count';
+      btn.addEventListener('click', () => {
+        tagSortOrder = order;
+        renderSidebar();
+      });
+      sortBar.appendChild(btn);
+    });
+    tagFilterList.appendChild(sortBar);
+
+    // Tag items
+    visible.forEach(tag => {
       const ci = tagColorIndex(tag);
       const item = document.createElement('button');
       item.className = 'tag-filter-item' + (selectedTagFilters.includes(tag) ? ' active' : '');
@@ -119,6 +158,22 @@
       item.addEventListener('click', () => toggleTagFilter(tag));
       tagFilterList.appendChild(item);
     });
+
+    // More / Less toggle
+    if (total > TAG_LIMIT) {
+      const moreBtn = document.createElement('button');
+      moreBtn.className = 'tag-more-btn';
+      if (tagListExpanded) {
+        moreBtn.textContent = 'Less';
+      } else {
+        moreBtn.textContent = `More (${total - TAG_LIMIT})`;
+      }
+      moreBtn.addEventListener('click', () => {
+        tagListExpanded = !tagListExpanded;
+        renderSidebar();
+      });
+      tagFilterList.appendChild(moreBtn);
+    }
   }
 
   // ── Date tree ──────────────────────────────────────────────────────────────
