@@ -38,12 +38,12 @@
   "chrome_url_overrides": {},
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data: https: http:;"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data: https:;"
   },
 
   "web_accessible_resources": [
     {
-      "resources": ["dashboard.html", "icons/*"],
+      "resources": ["icons/*"],
       "matches": ["chrome-extension://*/*"]
     }
   ]
