@@ -43,7 +43,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["dashboard.html", "icons/*"],
+      "resources": ["icons/*"],
       "matches": ["chrome-extension://*/*"]
     }
   ]
