@@ -95,14 +95,21 @@ async function saveBookmark(bookmark) {
   // Check for duplicate URL
   const existingIndex = bookmarks.findIndex(b => b.url === bookmark.url);
 
+  // Enforce field-length limits so a tab with an unusually long title or
+  // a bulk-programmatic caller cannot bloat chrome.storage.sync (A08).
+  const rawTags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const newBookmark = {
     id: existingIndex >= 0 ? bookmarks[existingIndex].id : generateId(),
-    url: bookmark.url,
-    title: bookmark.title || bookmark.url,
-    favIconUrl: bookmark.favIconUrl || '',
-    tags: bookmark.tags || [],
-    notes: bookmark.notes || '',
-    pinned: bookmark.pinned || false,
+    url: bookmark.url.slice(0, MAX_URL_LEN),
+    title: (typeof bookmark.title === 'string' ? bookmark.title : bookmark.url).slice(0, MAX_TITLE_LEN) || bookmark.url,
+    favIconUrl: sanitizeFavIconUrl(bookmark.favIconUrl),
+    tags: rawTags
+      .filter(t => typeof t === 'string')
+      .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+      .filter(t => t.length > 0)
+      .slice(0, MAX_TAGS),
+    notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
+    pinned: Boolean(bookmark.pinned),
     createdAt: existingIndex >= 0 ? bookmarks[existingIndex].createdAt : Date.now(),
     updatedAt: Date.now()
   };
@@ -133,11 +140,25 @@ function notifyDashboard(action) {
 
 // ── Import Sanitizer ────────────────────────────────────────────────────────
 
-const MAX_TITLE_LEN = 2000;
-const MAX_URL_LEN   = 2048;
-const MAX_NOTES_LEN = 10000;
-const MAX_TAG_LEN   = 100;
-const MAX_TAGS      = 50;
+const MAX_TITLE_LEN  = 2000;
+const MAX_URL_LEN    = 2048;
+const MAX_NOTES_LEN  = 10000;
+const MAX_TAG_LEN    = 100;
+const MAX_TAGS       = 50;
+
+// Allow only http/https favicons and inline data images (A03 – Injection).
+// javascript: and data:text/html URIs must never reach an img.src attribute.
+function sanitizeFavIconUrl(raw) {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim().slice(0, MAX_URL_LEN);
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
+  } catch {
+    return '';
+  }
+}
 
 function sanitizeBookmark(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -173,7 +194,7 @@ function sanitizeBookmark(raw) {
     id:         generateId(),
     url,
     title,
-    favIconUrl: typeof raw.favIconUrl === 'string' ? raw.favIconUrl.slice(0, MAX_URL_LEN) : '',
+    favIconUrl: sanitizeFavIconUrl(raw.favIconUrl),
     tags,
     notes,
     pinned,
@@ -185,6 +206,11 @@ function sanitizeBookmark(raw) {
 // ── Message Handler ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Only accept messages originating from this extension's own pages.
+  // Rejects messages from web pages, foreign extensions, and content scripts
+  // that are not part of TagMark (A01 – Broken Access Control).
+  if (sender.id !== chrome.runtime.id) return;
+
   handleMessage(message).then(sendResponse).catch(err => {
     sendResponse({ error: err.message });
   });
@@ -208,13 +234,37 @@ async function handleMessage(message) {
     }
 
     case 'update-bookmark': {
-      if (message.bookmark.url && !isValidUrl(message.bookmark.url)) {
+      const incoming = message.bookmark;
+      if (incoming.url && !isValidUrl(incoming.url)) {
         return { error: 'Invalid URL scheme' };
       }
       const bookmarks = await getBookmarks();
-      const idx = bookmarks.findIndex(b => b.id === message.bookmark.id);
+      const idx = bookmarks.findIndex(b => b.id === incoming.id);
       if (idx >= 0) {
-        bookmarks[idx] = { ...bookmarks[idx], ...message.bookmark, updatedAt: Date.now() };
+        const existing = bookmarks[idx];
+        // Only allow explicit mutable fields to be updated (A08).
+        // Spreading message.bookmark directly would let a caller overwrite
+        // immutable fields like id and createdAt.
+        const rawTags = Array.isArray(incoming.tags) ? incoming.tags : existing.tags;
+        bookmarks[idx] = {
+          ...existing,
+          title: typeof incoming.title === 'string'
+            ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.url
+            : existing.title,
+          url: incoming.url
+            ? incoming.url.slice(0, MAX_URL_LEN)
+            : existing.url,
+          notes: typeof incoming.notes === 'string'
+            ? incoming.notes.slice(0, MAX_NOTES_LEN)
+            : existing.notes,
+          tags: rawTags
+            .filter(t => typeof t === 'string')
+            .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+            .filter(t => t.length > 0)
+            .slice(0, MAX_TAGS),
+          pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : existing.pinned,
+          updatedAt: Date.now()
+        };
         await saveBookmarks(bookmarks);
         notifyDashboard('bookmark-updated');
       }

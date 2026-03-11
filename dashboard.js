@@ -543,9 +543,19 @@
 
   importBtn.addEventListener('click', () => importFileInput.click());
 
+  const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+
   importFileInput.addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Reject excessively large files before reading into memory (A05).
+    if (file.size > MAX_IMPORT_BYTES) {
+      showToast('Import file too large (max 5 MB).');
+      importFileInput.value = '';
+      return;
+    }
+
     try {
       const text = await file.text();
       const data = JSON.parse(text);
