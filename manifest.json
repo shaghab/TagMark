@@ -37,7 +37,7 @@
   "chrome_url_overrides": {},
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none';"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data: https: http:;"
   },
 
   "web_accessible_resources": [
