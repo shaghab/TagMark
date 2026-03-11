@@ -33,7 +33,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     favIconUrl = tab.favIconUrl || '';
   }
 
-  if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+  if (!isValidUrl(url)) {
     return;
   }
 
@@ -49,6 +49,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.action.setBadgeText({ text: '', tabId: tab.id });
   }, 2000);
 });
+
+// ── URL Validation ───────────────────────────────────────────────────────────
+
+const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'ftp:', 'file:'];
+
+function isValidUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return ALLOWED_URL_SCHEMES.includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
 
 // ── Storage Helpers ─────────────────────────────────────────────────────────
 
@@ -67,6 +81,10 @@ async function saveBookmarks(bookmarks) {
 }
 
 async function saveBookmark(bookmark) {
+  if (!isValidUrl(bookmark.url)) {
+    throw new Error('Invalid URL scheme');
+  }
+
   const bookmarks = await getBookmarks();
 
   // Check for duplicate URL
@@ -134,6 +152,9 @@ async function handleMessage(message) {
     }
 
     case 'update-bookmark': {
+      if (message.bookmark.url && !isValidUrl(message.bookmark.url)) {
+        return { error: 'Invalid URL scheme' };
+      }
       const bookmarks = await getBookmarks();
       const idx = bookmarks.findIndex(b => b.id === message.bookmark.id);
       if (idx >= 0) {
