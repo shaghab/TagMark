@@ -37,7 +37,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  await saveBookmark({ url, title, favIconUrl, tags: [], notes: '', pinned: false });
+  try {
+    await saveBookmark({ url, title, favIconUrl, tags: [], notes: '', pinned: false });
+  } catch (err) {
+    console.error('[TagMark] context menu save failed:', err);
+    return;
+  }
 
   // Notify any open dashboard tabs
   notifyDashboard('bookmark-added');
