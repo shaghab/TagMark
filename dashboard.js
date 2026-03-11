@@ -584,7 +584,11 @@
       notes: editNotes.value.trim()
     };
 
-    await chrome.runtime.sendMessage({ action: 'update-bookmark', bookmark: updated });
+    const result = await chrome.runtime.sendMessage({ action: 'update-bookmark', bookmark: updated });
+    if (result && result.error) {
+      showToast(`Error: ${result.error}`);
+      return;
+    }
     closeEditModal();
     await loadBookmarks();
     showToast('Bookmark updated!');
