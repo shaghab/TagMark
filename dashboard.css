@@ -337,6 +337,62 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Tag sort bar ────────────────────────────────────── */
+
+.tag-sort-bar {
+  display: flex;
+  gap: 2px;
+  padding: 0 2px 6px;
+}
+
+.tag-sort-btn {
+  flex: 1;
+  padding: 3px 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  text-align: center;
+}
+
+.tag-sort-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.tag-sort-btn.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.tag-more-btn {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition);
+}
+
+.tag-more-btn:hover {
+  background: var(--accent-light);
+}
+
 .sidebar-footer {
   padding: 12px 8px;
   border-top: 1px solid var(--border);
