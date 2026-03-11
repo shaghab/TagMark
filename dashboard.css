@@ -1205,6 +1205,215 @@ body {
 .dot-6 { background: #7e22ce; }
 .dot-7 { background: #be123c; }
 
+/* ── Folder tree ─────────────────────────────────────── */
+
+.folder-tree {
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.folder-node-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  position: relative;
+  transition: background var(--transition), color var(--transition);
+  width: 100%;
+}
+
+.folder-node-row:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.folder-node-row.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.folder-arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.folder-arrow.open {
+  transform: rotate(90deg);
+}
+
+.folder-arrow.folder-arrow-hidden {
+  visibility: hidden;
+}
+
+.folder-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.folder-node-row.active .folder-icon {
+  color: var(--accent);
+}
+
+.folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-node-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.folder-node-row.active .folder-node-count {
+  color: var(--accent);
+}
+
+.folder-row-actions {
+  display: none;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.folder-node-row:hover .folder-row-actions {
+  display: flex;
+}
+
+.folder-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  flex-shrink: 0;
+}
+
+.folder-action-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.folder-action-btn.delete:hover {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+/* ── Folder section label ─────────────────────────────── */
+
+.sidebar-section-label.folder-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.new-folder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--transition), color var(--transition);
+}
+
+.new-folder-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+/* ── Card folder breadcrumb ──────────────────────────── */
+
+.card-folder {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Folder filter chip ──────────────────────────────── */
+
+.folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  user-select: none;
+}
+
+.folder-chip:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ── Folder select in edit modal ─────────────────────── */
+
+.form-select {
+  height: 38px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13.5px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition);
+  width: 100%;
+}
+
+.form-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Folder modal (compact) ──────────────────────────── */
+
+.folder-modal {
+  width: 380px;
+}
+
 /* ── Responsive ──────────────────────────────────────── */
 
 @media (max-width: 600px) {

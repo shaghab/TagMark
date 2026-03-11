@@ -7,8 +7,11 @@
 
   let allBookmarks = [];
   let allTags = [];
+  let allFolders = [];
   let selectedTagFilters = [];
   let selectedDateFilter = null; // null | "YYYY" | "YYYY-M" | "YYYY-M-D"
+  let selectedFolderFilter = null; // null | folder id
+  let openFolderIds = new Set();
   let dateTreeOpenYears  = new Set();
   let dateTreeOpenMonths = new Set();
   let activeFilter = 'all'; // 'all' | 'pinned'
@@ -20,6 +23,10 @@
   let tagSortOrder = 'recent'; // 'recent' | 'name' | 'count'
   let tagListExpanded = false;
   const TAG_LIMIT = 5;
+
+  // Folder modal state
+  let folderModalMode = null;   // 'new-root' | 'new-sub' | 'rename'
+  let folderModalTargetId = null;
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
 
@@ -92,14 +99,20 @@
 
   async function loadBookmarks() {
     try {
-      allBookmarks = await chrome.runtime.sendMessage({ action: 'get-bookmarks' });
+      [allBookmarks, allFolders] = await Promise.all([
+        chrome.runtime.sendMessage({ action: 'get-bookmarks' }),
+        chrome.runtime.sendMessage({ action: 'get-folders' })
+      ]);
+      if (!Array.isArray(allFolders)) allFolders = [];
       allTags = [...new Set(allBookmarks.flatMap(b => b.tags))].sort();
     } catch (e) {
       allBookmarks = [];
       allTags = [];
+      allFolders = [];
     }
     renderSidebar();
     renderDateTree();
+    renderFolderTree();
     renderGrid();
   }
 
@@ -301,6 +314,198 @@
     });
   }
 
+  // ── Folder helpers ──────────────────────────────────────────────────────────
+
+  function getFolderDescendantIds(folderId) {
+    const ids = new Set([folderId]);
+    const collect = id => {
+      allFolders.filter(f => f.parentId === id).forEach(f => {
+        ids.add(f.id);
+        collect(f.id);
+      });
+    };
+    collect(folderId);
+    return ids;
+  }
+
+  function getFolderPath(folderId) {
+    const path = [];
+    let current = allFolders.find(f => f.id === folderId);
+    while (current) {
+      path.unshift(current.name);
+      current = current.parentId ? allFolders.find(f => f.id === current.parentId) : null;
+    }
+    return path;
+  }
+
+  function getFolderBookmarkCount(folderId) {
+    const ids = getFolderDescendantIds(folderId);
+    return allBookmarks.filter(b => ids.has(b.folderId)).length;
+  }
+
+  // ── Folder tree ─────────────────────────────────────────────────────────────
+
+  function renderFolderTree() {
+    const container = $('folderTree');
+    container.innerHTML = '';
+
+    const roots = allFolders.filter(f => !f.parentId).sort((a, b) => a.name.localeCompare(b.name));
+
+    function renderNode(folder, depth) {
+      const children = allFolders.filter(f => f.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
+      const hasChildren = children.length > 0;
+      const isOpen = openFolderIds.has(folder.id);
+      const isActive = selectedFolderFilter === folder.id;
+      const count = getFolderBookmarkCount(folder.id);
+
+      const row = document.createElement('div');
+      row.className = 'folder-node-row' + (isActive ? ' active' : '');
+      row.style.paddingLeft = `${8 + depth * 14}px`;
+      row.innerHTML =
+        `<span class="folder-arrow${hasChildren ? '' : ' folder-arrow-hidden'}${isOpen ? ' open' : ''}">` +
+          `<svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+        `</span>` +
+        `<svg class="folder-icon" width="13" height="13" viewBox="0 0 24 24" fill="none">` +
+          `<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>` +
+        `</svg>` +
+        `<span class="folder-name">${escHtml(folder.name)}</span>` +
+        `<span class="folder-node-count">${count}</span>` +
+        `<div class="folder-row-actions">` +
+          `<button class="folder-action-btn" data-action="add-sub" data-id="${escAttr(folder.id)}" title="New subfolder">` +
+            `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>` +
+          `</button>` +
+          `<button class="folder-action-btn" data-action="rename" data-id="${escAttr(folder.id)}" title="Rename">` +
+            `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>` +
+          `</button>` +
+          `<button class="folder-action-btn delete" data-action="delete" data-id="${escAttr(folder.id)}" title="Delete">` +
+            `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>` +
+          `</button>` +
+        `</div>`;
+
+      row.addEventListener('click', e => {
+        const actionBtn = e.target.closest('.folder-action-btn');
+        if (actionBtn) {
+          e.stopPropagation();
+          handleFolderAction(actionBtn.dataset.action, actionBtn.dataset.id);
+          return;
+        }
+        if (hasChildren && e.target.closest('.folder-arrow')) {
+          isOpen ? openFolderIds.delete(folder.id) : openFolderIds.add(folder.id);
+          renderFolderTree();
+          return;
+        }
+        selectedFolderFilter = isActive ? null : folder.id;
+        renderFolderTree();
+        renderActiveFilters();
+        renderGrid();
+      });
+
+      container.appendChild(row);
+
+      if (hasChildren && isOpen) {
+        children.forEach(child => renderNode(child, depth + 1));
+      }
+    }
+
+    roots.forEach(f => renderNode(f, 0));
+  }
+
+  // ── Folder management ───────────────────────────────────────────────────────
+
+  function openFolderModal(mode, targetId) {
+    folderModalMode = mode;
+    folderModalTargetId = targetId || null;
+    const titleEl = $('folderModalTitle');
+    const submitEl = $('folderSubmitBtn');
+    const nameInput = $('folderNameInput');
+    if (mode === 'rename') {
+      const folder = allFolders.find(f => f.id === targetId);
+      titleEl.textContent = 'Rename Folder';
+      submitEl.textContent = 'Rename';
+      nameInput.value = folder ? folder.name : '';
+    } else {
+      titleEl.textContent = mode === 'new-sub' ? 'New Subfolder' : 'New Folder';
+      submitEl.textContent = 'Create';
+      nameInput.value = '';
+    }
+    $('folderModalOverlay').style.display = '';
+    setTimeout(() => nameInput.focus(), 80);
+  }
+
+  function closeFolderModal() {
+    $('folderModalOverlay').style.display = 'none';
+    folderModalMode = null;
+    folderModalTargetId = null;
+  }
+
+  async function handleFolderAction(action, folderId) {
+    if (action === 'rename') {
+      openFolderModal('rename', folderId);
+    } else if (action === 'add-sub') {
+      openFolderIds.add(folderId);
+      openFolderModal('new-sub', folderId);
+    } else if (action === 'delete') {
+      const folder = allFolders.find(f => f.id === folderId);
+      if (!folder) return;
+      const descendants = getFolderDescendantIds(folderId);
+      const affected = allBookmarks.filter(b => descendants.has(b.folderId)).length;
+      const confirmMsg = affected > 0
+        ? `Delete "${folder.name}" and all subfolders? ${affected} bookmark(s) will be unassigned.`
+        : `Delete folder "${folder.name}"?`;
+      if (!confirm(confirmMsg)) return;
+      await chrome.runtime.sendMessage({ action: 'delete-folder', id: folderId });
+      if (selectedFolderFilter && descendants.has(selectedFolderFilter)) {
+        selectedFolderFilter = null;
+      }
+      await loadBookmarks();
+      showToast('Folder deleted.');
+    }
+  }
+
+  $('newRootFolderBtn').addEventListener('click', () => openFolderModal('new-root', null));
+  $('closeFolderModal').addEventListener('click', closeFolderModal);
+  $('cancelFolderEdit').addEventListener('click', closeFolderModal);
+
+  $('folderModalOverlay').addEventListener('click', e => {
+    if (e.target === $('folderModalOverlay')) closeFolderModal();
+  });
+
+  $('folderForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = $('folderNameInput').value.trim();
+    if (!name) return;
+    if (folderModalMode === 'rename') {
+      await chrome.runtime.sendMessage({ action: 'update-folder', id: folderModalTargetId, name });
+    } else {
+      const parentId = folderModalMode === 'new-sub' ? folderModalTargetId : null;
+      await chrome.runtime.sendMessage({ action: 'create-folder', name, parentId });
+    }
+    const wasRename = folderModalMode === 'rename';
+    closeFolderModal();
+    await loadBookmarks();
+    showToast(wasRename ? 'Folder renamed.' : 'Folder created.');
+  });
+
+  // ── Folder select populate ──────────────────────────────────────────────────
+
+  function populateFolderSelect(selectEl, selectedId, excludeId) {
+    selectEl.innerHTML = '<option value="">— No folder —</option>';
+    const addOptions = (parentId, depth) => {
+      allFolders
+        .filter(f => f.parentId === parentId && f.id !== excludeId)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = '\u00A0\u00A0'.repeat(depth * 2) + f.name;
+          if (f.id === selectedId) opt.selected = true;
+          selectEl.appendChild(opt);
+          addOptions(f.id, depth + 1);
+        });
+    };
+    addOptions(null, 0);
+  }
+
   function toggleTagFilter(tag) {
     const idx = selectedTagFilters.indexOf(tag);
     if (idx >= 0) {
@@ -334,8 +539,10 @@
   clearFilters.addEventListener('click', () => {
     selectedTagFilters = [];
     selectedDateFilter = null;
+    selectedFolderFilter = null;
     renderSidebar();
     renderDateTree();
+    renderFolderTree();
     renderActiveFilters();
     renderGrid();
   });
@@ -345,8 +552,9 @@
   function renderActiveFilters() {
     const hasTagFilters  = selectedTagFilters.length > 0;
     const hasDateFilter  = selectedDateFilter !== null;
+    const hasFolderFilter = selectedFolderFilter !== null;
 
-    if (!hasTagFilters && !hasDateFilter) {
+    if (!hasTagFilters && !hasDateFilter && !hasFolderFilter) {
       activeFiltersRow.style.display = 'none';
       return;
     }
@@ -363,7 +571,14 @@
           `${escHtml(formatDateFilter(selectedDateFilter))} ×</span>`
       : '';
 
-    activeTagChips.innerHTML = tagChipsHtml + dateChipHtml;
+    const folderPath = hasFolderFilter ? getFolderPath(selectedFolderFilter) : [];
+    const folderChipHtml = hasFolderFilter
+      ? `<span class="folder-chip active-filter-chip" data-folder="${escAttr(selectedFolderFilter)}">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></svg>` +
+          `${escHtml(folderPath.join(' / '))} ×</span>`
+      : '';
+
+    activeTagChips.innerHTML = tagChipsHtml + dateChipHtml + folderChipHtml;
 
     activeTagChips.querySelectorAll('.tag-chip').forEach(chip => {
       chip.addEventListener('click', () => toggleTagFilter(chip.dataset.tag));
@@ -372,6 +587,14 @@
       chip.addEventListener('click', () => {
         selectedDateFilter = null;
         renderDateTree();
+        renderActiveFilters();
+        renderGrid();
+      });
+    });
+    activeTagChips.querySelectorAll('.folder-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        selectedFolderFilter = null;
+        renderFolderTree();
         renderActiveFilters();
         renderGrid();
       });
@@ -398,8 +621,9 @@
       searchInput.focus();
       searchInput.select();
     }
-    if (e.key === 'Escape' && modalOverlay.style.display !== 'none') {
-      closeEditModal();
+    if (e.key === 'Escape') {
+      if (modalOverlay.style.display !== 'none') closeEditModal();
+      if ($('folderModalOverlay').style.display !== 'none') closeFolderModal();
     }
   });
 
@@ -426,6 +650,12 @@
         if (parts[2] != null && d.getDate()         !== +parts[2]) return false;
         return true;
       });
+    }
+
+    // Filter by selected folder (includes subfolders)
+    if (selectedFolderFilter) {
+      const folderIds = getFolderDescendantIds(selectedFolderFilter);
+      list = list.filter(b => folderIds.has(b.folderId));
     }
 
     // Filter by search query
@@ -470,6 +700,10 @@
       } else if (selectedDateFilter) {
         emptyTitle.textContent = 'No bookmarks on this date';
         emptyDesc.textContent = `No bookmarks saved in ${escHtml(formatDateFilter(selectedDateFilter))}. Try a different date.`;
+      } else if (selectedFolderFilter) {
+        const fp = getFolderPath(selectedFolderFilter);
+        emptyTitle.textContent = 'No bookmarks in this folder';
+        emptyDesc.textContent = `No bookmarks are saved in "${fp.join(' / ')}". Move bookmarks here by editing them.`;
       } else if (selectedTagFilters.length) {
         emptyTitle.textContent = 'No bookmarks with these tags';
         emptyDesc.textContent = 'Try removing some filters to see more bookmarks.';
@@ -529,6 +763,16 @@
       ? `<p class="card-notes">${escHtml(b.notes)}</p>`
       : '';
 
+    const folderPath = b.folderId ? getFolderPath(b.folderId) : null;
+    const folderHtml = folderPath && folderPath.length
+      ? `<div class="card-folder">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">` +
+            `<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>` +
+          `</svg>` +
+          `${escHtml(folderPath.join(' / '))}` +
+        `</div>`
+      : '';
+
     return `
       <article class="bookmark-card${b.pinned ? ' pinned' : ''}" data-id="${escAttr(b.id)}">
         <div class="card-header">
@@ -547,6 +791,7 @@
             </svg>
           </button>
         </div>
+        ${folderHtml}
         ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
         ${notesHtml}
         <div class="card-footer">
@@ -606,6 +851,7 @@
     editNotes.value = b.notes || '';
     editTags = [...(b.tags || [])];
     renderEditChips();
+    populateFolderSelect($('editFolder'), b.folderId || '');
 
     modalOverlay.style.display = '';
     setTimeout(() => editTitle.focus(), 100);
@@ -636,7 +882,8 @@
       title: editTitle.value.trim() || b.url,
       url: editUrl.value.trim() || b.url,
       tags: [...editTags],
-      notes: editNotes.value.trim()
+      notes: editNotes.value.trim(),
+      folderId: $('editFolder').value || null
     };
 
     const result = await chrome.runtime.sendMessage({ action: 'update-bookmark', bookmark: updated });
@@ -798,7 +1045,7 @@
   // ── Live updates from background ───────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener(message => {
-    const refreshActions = ['bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported'];
+    const refreshActions = ['bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported', 'folders-updated'];
     if (refreshActions.includes(message.action)) {
       loadBookmarks();
     }
