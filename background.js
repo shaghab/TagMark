@@ -95,14 +95,21 @@ async function saveBookmark(bookmark) {
   // Check for duplicate URL
   const existingIndex = bookmarks.findIndex(b => b.url === bookmark.url);
 
+  // Enforce field-length limits so a tab with an unusually long title or
+  // a bulk-programmatic caller cannot bloat chrome.storage.sync (A08).
+  const rawTags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const newBookmark = {
     id: existingIndex >= 0 ? bookmarks[existingIndex].id : generateId(),
-    url: bookmark.url,
-    title: bookmark.title || bookmark.url,
-    favIconUrl: bookmark.favIconUrl || '',
-    tags: bookmark.tags || [],
-    notes: bookmark.notes || '',
-    pinned: bookmark.pinned || false,
+    url: bookmark.url.slice(0, MAX_URL_LEN),
+    title: (typeof bookmark.title === 'string' ? bookmark.title : bookmark.url).slice(0, MAX_TITLE_LEN) || bookmark.url,
+    favIconUrl: sanitizeFavIconUrl(bookmark.favIconUrl),
+    tags: rawTags
+      .filter(t => typeof t === 'string')
+      .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+      .filter(t => t.length > 0)
+      .slice(0, MAX_TAGS),
+    notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
+    pinned: Boolean(bookmark.pinned),
     createdAt: existingIndex >= 0 ? bookmarks[existingIndex].createdAt : Date.now(),
     updatedAt: Date.now()
   };
