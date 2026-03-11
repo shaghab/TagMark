@@ -415,6 +415,10 @@ body {
   gap: 6px;
 }
 
+.active-filter-chip {
+  cursor: pointer;
+}
+
 .clear-filters {
   margin-left: auto;
   border: none;

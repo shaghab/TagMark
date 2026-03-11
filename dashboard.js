@@ -203,7 +203,7 @@
     activeFiltersRow.style.display = '';
     activeTagChips.innerHTML = selectedTagFilters.map(tag => {
       const ci = tagColorIndex(tag);
-      return `<span class="tag-chip tc-${ci}" data-tag="${escAttr(tag)}" style="cursor:pointer">
+      return `<span class="tag-chip tc-${ci} active-filter-chip" data-tag="${escAttr(tag)}">
         ${escHtml(tag)} ×
       </span>`;
     }).join('');
