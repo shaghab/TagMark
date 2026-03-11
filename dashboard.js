@@ -8,6 +8,9 @@
   let allBookmarks = [];
   let allTags = [];
   let selectedTagFilters = [];
+  let selectedDateFilter = null; // null | "YYYY" | "YYYY-M" | "YYYY-M-D"
+  let dateTreeOpenYears  = new Set();
+  let dateTreeOpenMonths = new Set();
   let activeFilter = 'all'; // 'all' | 'pinned'
   let searchQuery = '';
   let sortOrder = 'newest';
@@ -26,6 +29,7 @@
   const allCount         = $('allCount');
   const pinnedCount      = $('pinnedCount');
   const tagFilterList    = $('tagFilterList');
+  const dateFilterTree   = $('dateFilterTree');
   const searchInput      = $('searchInput');
   const sortSelect       = $('sortSelect');
   const activeFiltersRow = $('activeFilters');
@@ -92,6 +96,7 @@
       allTags = [];
     }
     renderSidebar();
+    renderDateTree();
     renderGrid();
   }
 
@@ -113,6 +118,131 @@
       item.innerHTML = `<span class="tag-dot dot-${ci}"></span>${escHtml(tag)}<span class="tag-filter-count">${tagCounts[tag] || 0}</span>`;
       item.addEventListener('click', () => toggleTagFilter(tag));
       tagFilterList.appendChild(item);
+    });
+  }
+
+  // ── Date tree ──────────────────────────────────────────────────────────────
+
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+
+  function buildDateTree() {
+    // Returns { year: { month: { day: count } } }
+    const tree = {};
+    allBookmarks.forEach(b => {
+      const d = new Date(b.createdAt);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const day = d.getDate();
+      if (!tree[y]) tree[y] = {};
+      if (!tree[y][m]) tree[y][m] = {};
+      tree[y][m][day] = (tree[y][m][day] || 0) + 1;
+    });
+    return tree;
+  }
+
+  function monthTotal(monthObj) {
+    return Object.values(monthObj).reduce((s, n) => s + n, 0);
+  }
+
+  function yearTotal(yearObj) {
+    return Object.values(yearObj).reduce((s, mo) => s + monthTotal(mo), 0);
+  }
+
+  function formatDateFilter(filter) {
+    const parts = filter.split('-');
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return `${MONTH_NAMES[+parts[1] - 1]} ${parts[0]}`;
+    return `${MONTH_NAMES[+parts[1] - 1]} ${parts[2]}, ${parts[0]}`;
+  }
+
+  function renderDateTree() {
+    const tree = buildDateTree();
+    const years = Object.keys(tree).sort((a, b) => b - a);
+
+    // Auto-open most recent year on first load
+    if (years.length && !dateTreeOpenYears.size) {
+      dateTreeOpenYears.add(years[0]);
+    }
+
+    dateFilterTree.innerHTML = '';
+
+    years.forEach(year => {
+      const yearKey = String(year);
+      const isYearOpen = dateTreeOpenYears.has(yearKey);
+      const isYearActive = selectedDateFilter === yearKey;
+      const yTotal = yearTotal(tree[year]);
+
+      // Year row
+      const yearBtn = document.createElement('button');
+      yearBtn.className = 'date-node date-year-node' + (isYearActive ? ' active' : '');
+      yearBtn.innerHTML =
+        `<span class="date-arrow${isYearOpen ? ' open' : ''}">` +
+          `<svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+        `</span>` +
+        `<span class="date-node-label">${escHtml(year)}</span>` +
+        `<span class="date-node-count">${yTotal}</span>`;
+      yearBtn.addEventListener('click', () => {
+        isYearOpen ? dateTreeOpenYears.delete(yearKey) : dateTreeOpenYears.add(yearKey);
+        selectedDateFilter = isYearActive ? null : yearKey;
+        renderDateTree();
+        renderActiveFilters();
+        renderGrid();
+      });
+      dateFilterTree.appendChild(yearBtn);
+
+      if (!isYearOpen) return;
+
+      // Month rows
+      const months = Object.keys(tree[year]).sort((a, b) => b - a);
+      months.forEach(month => {
+        const monthKey = `${year}-${month}`;
+        const isMonthOpen = dateTreeOpenMonths.has(monthKey);
+        const isMonthActive = selectedDateFilter === monthKey;
+        const mTotal = monthTotal(tree[year][month]);
+
+        const monthBtn = document.createElement('button');
+        monthBtn.className = 'date-node date-month-node' + (isMonthActive ? ' active' : '');
+        monthBtn.innerHTML =
+          `<span class="date-arrow${isMonthOpen ? ' open' : ''}">` +
+            `<svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+          `</span>` +
+          `<span class="date-node-label">${escHtml(MONTH_NAMES[+month - 1])}</span>` +
+          `<span class="date-node-count">${mTotal}</span>`;
+        monthBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          isMonthOpen ? dateTreeOpenMonths.delete(monthKey) : dateTreeOpenMonths.add(monthKey);
+          selectedDateFilter = isMonthActive ? null : monthKey;
+          renderDateTree();
+          renderActiveFilters();
+          renderGrid();
+        });
+        dateFilterTree.appendChild(monthBtn);
+
+        if (!isMonthOpen) return;
+
+        // Day rows
+        const days = Object.keys(tree[year][month]).sort((a, b) => b - a);
+        days.forEach(day => {
+          const dayKey = `${year}-${month}-${day}`;
+          const isDayActive = selectedDateFilter === dayKey;
+          const dCount = tree[year][month][day];
+
+          const dayBtn = document.createElement('button');
+          dayBtn.className = 'date-node date-day-node' + (isDayActive ? ' active' : '');
+          dayBtn.innerHTML =
+            `<span class="date-node-label">${escHtml(MONTH_NAMES[+month - 1])} ${escHtml(day)}</span>` +
+            `<span class="date-node-count">${dCount}</span>`;
+          dayBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            selectedDateFilter = isDayActive ? null : dayKey;
+            renderDateTree();
+            renderActiveFilters();
+            renderGrid();
+          });
+          dateFilterTree.appendChild(dayBtn);
+        });
+      });
     });
   }
 
@@ -148,7 +278,9 @@
 
   clearFilters.addEventListener('click', () => {
     selectedTagFilters = [];
+    selectedDateFilter = null;
     renderSidebar();
+    renderDateTree();
     renderActiveFilters();
     renderGrid();
   });
@@ -156,19 +288,38 @@
   // ── Active filters row ─────────────────────────────────────────────────────
 
   function renderActiveFilters() {
-    if (!selectedTagFilters.length) {
+    const hasTagFilters  = selectedTagFilters.length > 0;
+    const hasDateFilter  = selectedDateFilter !== null;
+
+    if (!hasTagFilters && !hasDateFilter) {
       activeFiltersRow.style.display = 'none';
       return;
     }
     activeFiltersRow.style.display = '';
-    activeTagChips.innerHTML = selectedTagFilters.map(tag => {
+
+    const tagChipsHtml = selectedTagFilters.map(tag => {
       const ci = tagColorIndex(tag);
-      return `<span class="tag-chip tc-${ci} active-filter-chip" data-tag="${escAttr(tag)}">
-        ${escHtml(tag)} ×
-      </span>`;
+      return `<span class="tag-chip tc-${ci} active-filter-chip" data-tag="${escAttr(tag)}">${escHtml(tag)} ×</span>`;
     }).join('');
+
+    const dateChipHtml = hasDateFilter
+      ? `<span class="date-chip active-filter-chip" data-date="${escAttr(selectedDateFilter)}">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>` +
+          `${escHtml(formatDateFilter(selectedDateFilter))} ×</span>`
+      : '';
+
+    activeTagChips.innerHTML = tagChipsHtml + dateChipHtml;
+
     activeTagChips.querySelectorAll('.tag-chip').forEach(chip => {
       chip.addEventListener('click', () => toggleTagFilter(chip.dataset.tag));
+    });
+    activeTagChips.querySelectorAll('.date-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        selectedDateFilter = null;
+        renderDateTree();
+        renderActiveFilters();
+        renderGrid();
+      });
     });
   }
 
@@ -210,6 +361,18 @@
       list = list.filter(b => selectedTagFilters.every(t => b.tags.includes(t)));
     }
 
+    // Filter by selected date
+    if (selectedDateFilter) {
+      const parts = selectedDateFilter.split('-');
+      list = list.filter(b => {
+        const d = new Date(b.createdAt);
+        if (d.getFullYear()   !== +parts[0]) return false;
+        if (parts[1] != null && (d.getMonth() + 1) !== +parts[1]) return false;
+        if (parts[2] != null && d.getDate()         !== +parts[2]) return false;
+        return true;
+      });
+    }
+
     // Filter by search query
     if (searchQuery) {
       list = list.filter(b =>
@@ -249,6 +412,9 @@
       } else if (searchQuery) {
         emptyTitle.textContent = 'No results found';
         emptyDesc.textContent = `No bookmarks match "${searchQuery}". Try a different search.`;
+      } else if (selectedDateFilter) {
+        emptyTitle.textContent = 'No bookmarks on this date';
+        emptyDesc.textContent = `No bookmarks saved in ${escHtml(formatDateFilter(selectedDateFilter))}. Try a different date.`;
       } else if (selectedTagFilters.length) {
         emptyTitle.textContent = 'No bookmarks with these tags';
         emptyDesc.textContent = 'Try removing some filters to see more bookmarks.';

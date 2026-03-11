@@ -181,13 +181,119 @@ body {
   color: var(--text-muted);
 }
 
-.tag-filter-list {
+.sidebar-middle {
   flex: 1;
-  padding: 0 8px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tag-filter-list {
+  padding: 0 8px 4px;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  overflow-y: auto;
+}
+
+.date-filter-tree {
+  padding: 0 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* ── Date tree nodes ─────────────────────────────────── */
+
+.date-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+
+.date-node:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.date-node.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.date-year-node {
+  padding: 6px 10px;
+}
+
+.date-month-node {
+  padding: 5px 10px 5px 20px;
+}
+
+.date-day-node {
+  padding: 4px 10px 4px 34px;
+  font-size: 12.5px;
+}
+
+.date-arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.date-arrow.open {
+  transform: rotate(90deg);
+}
+
+.date-node-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.date-node-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.date-node.active .date-node-count {
+  color: var(--accent);
+}
+
+/* ── Date filter chip ────────────────────────────────── */
+
+.date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  user-select: none;
+}
+
+.date-chip:hover {
+  background: var(--border);
+  color: var(--text);
 }
 
 .tag-filter-item {
