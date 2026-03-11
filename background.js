@@ -185,6 +185,11 @@ function sanitizeBookmark(raw) {
 // ── Message Handler ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Only accept messages originating from this extension's own pages.
+  // Rejects messages from web pages, foreign extensions, and content scripts
+  // that are not part of TagMark (A01 – Broken Access Control).
+  if (sender.id !== chrome.runtime.id) return;
+
   handleMessage(message).then(sendResponse).catch(err => {
     sendResponse({ error: err.message });
   });
