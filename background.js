@@ -133,11 +133,25 @@ function notifyDashboard(action) {
 
 // ── Import Sanitizer ────────────────────────────────────────────────────────
 
-const MAX_TITLE_LEN = 2000;
-const MAX_URL_LEN   = 2048;
-const MAX_NOTES_LEN = 10000;
-const MAX_TAG_LEN   = 100;
-const MAX_TAGS      = 50;
+const MAX_TITLE_LEN  = 2000;
+const MAX_URL_LEN    = 2048;
+const MAX_NOTES_LEN  = 10000;
+const MAX_TAG_LEN    = 100;
+const MAX_TAGS       = 50;
+
+// Allow only http/https favicons and inline data images (A03 – Injection).
+// javascript: and data:text/html URIs must never reach an img.src attribute.
+function sanitizeFavIconUrl(raw) {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim().slice(0, MAX_URL_LEN);
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
+  } catch {
+    return '';
+  }
+}
 
 function sanitizeBookmark(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -173,7 +187,7 @@ function sanitizeBookmark(raw) {
     id:         generateId(),
     url,
     title,
-    favIconUrl: typeof raw.favIconUrl === 'string' ? raw.favIconUrl.slice(0, MAX_URL_LEN) : '',
+    favIconUrl: sanitizeFavIconUrl(raw.favIconUrl),
     tags,
     notes,
     pinned,
