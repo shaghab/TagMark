@@ -515,6 +515,10 @@ body {
   gap: 10px;
 }
 
+.hidden {
+  display: none;
+}
+
 .card-favicon {
   width: 20px;
   height: 20px;

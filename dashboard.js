@@ -328,16 +328,16 @@
     });
     bookmarkGrid.querySelectorAll('.card-favicon').forEach(img => {
       img.addEventListener('error', function () {
-        this.style.display = 'none';
-        this.nextElementSibling.style.display = '';
+        this.classList.add('hidden');
+        this.nextElementSibling.classList.remove('hidden');
       });
     });
   }
 
   function renderCard(b) {
     const faviconSrc = escAttr(b.favIconUrl || '');
-    const faviconVisible = b.favIconUrl ? '' : 'display:none;';
-    const faviconFallVisible = b.favIconUrl ? 'display:none;' : '';
+    const faviconHiddenClass = b.favIconUrl ? '' : ' hidden';
+    const faviconFallHiddenClass = b.favIconUrl ? ' hidden' : '';
 
     const tagsHtml = (b.tags || []).map(t => {
       const ci = tagColorIndex(t);
@@ -351,8 +351,8 @@
     return `
       <article class="bookmark-card${b.pinned ? ' pinned' : ''}" data-id="${escAttr(b.id)}">
         <div class="card-header">
-          <img class="card-favicon" src="${faviconSrc}" alt="" style="${faviconVisible}" />
-          <svg class="card-favicon-fallback" style="${faviconFallVisible}" viewBox="0 0 24 24" fill="none">
+          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" alt="" />
+          <svg class="card-favicon-fallback${faviconFallHiddenClass}" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>
           </svg>
