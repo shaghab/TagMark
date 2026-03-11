@@ -35,36 +35,11 @@
 
   // ── Theme ─────────────────────────────────────────────────────────────────
 
-  function getTheme() {
-    return localStorage.getItem('tagmark_theme') || 'light';
-  }
-
-  function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    const sun = themeToggle.querySelector('.sun-icon');
-    const moon = themeToggle.querySelector('.moon-icon');
-    if (theme === 'dark') {
-      sun.style.display = 'none';
-      moon.style.display = '';
-    } else {
-      sun.style.display = '';
-      moon.style.display = 'none';
-    }
-  }
-
   function toggleTheme() {
     const next = getTheme() === 'dark' ? 'light' : 'dark';
     localStorage.setItem('tagmark_theme', next);
     applyTheme(next);
     chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
-  }
-
-  // ── Tag color ─────────────────────────────────────────────────────────────
-
-  function tagColorIndex(tag) {
-    let hash = 0;
-    for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) | 0;
-    return Math.abs(hash) % 8;
   }
 
   // ── Tag chips ─────────────────────────────────────────────────────────────
@@ -310,23 +285,6 @@
       saveBtn.disabled = true;
       saveBtn.title = 'Cannot bookmark this page';
     }
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  function formatUrl(url) {
-    try {
-      const u = new URL(url);
-      return u.hostname + (u.pathname !== '/' ? u.pathname : '');
-    } catch { return url; }
-  }
-
-  function escHtml(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function escAttr(str) {
-    return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
