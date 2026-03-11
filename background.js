@@ -1,8 +1,10 @@
 // TagMark Background Service Worker
 // Handles context menus, sync, and cross-tab communication
 
-const STORAGE_KEY = 'tagmark_bookmarks';
+const STORAGE_KEY  = 'tagmark_bookmarks'; // legacy — kept only for one-time migration
 const SETTINGS_KEY = 'tagmark_settings';
+const INDEX_KEY    = 'tagmark_index';     // ordered array of bookmark IDs
+const BM_PREFIX    = 'tagmark_bm_';      // per-bookmark key: tagmark_bm_<id>
 
 // ── Context Menu Setup ──────────────────────────────────────────────────────
 
@@ -70,19 +72,83 @@ function isValidUrl(url) {
 }
 
 // ── Storage Helpers ─────────────────────────────────────────────────────────
+//
+// Bookmarks are stored as individual keys (tagmark_bm_<id>) rather than a
+// single array so that no single chrome.storage.sync entry exceeds the 8 KB
+// per-item limit that would silently prevent cross-device sync.
+//
+// Storage layout:
+//   tagmark_index          → string[]   ordered list of bookmark IDs
+//   tagmark_bm_<id>        → Bookmark   one key per bookmark
+//   tagmark_settings       → Settings   unchanged
+
+function storageGet(keys) {
+  return new Promise(resolve => chrome.storage.sync.get(keys, resolve));
+}
+
+function storageSet(items) {
+  return new Promise(resolve => chrome.storage.sync.set(items, resolve));
+}
+
+function storageRemove(keys) {
+  return new Promise(resolve => chrome.storage.sync.remove(keys, resolve));
+}
 
 async function getBookmarks() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get([STORAGE_KEY], (result) => {
-      resolve(result[STORAGE_KEY] || []);
-    });
-  });
+  const result = await storageGet([INDEX_KEY]);
+  const ids = result[INDEX_KEY];
+
+  // No index yet — either fresh install or pre-sharding data that needs migration.
+  if (!Array.isArray(ids)) {
+    return migrateLegacyStorage();
+  }
+
+  if (ids.length === 0) return [];
+
+  const bmKeys = ids.map(id => BM_PREFIX + id);
+  const bmResult = await storageGet(bmKeys);
+  // Preserve ordering from index; skip any entries missing from storage.
+  return ids.map(id => bmResult[BM_PREFIX + id]).filter(Boolean);
 }
 
 async function saveBookmarks(bookmarks) {
-  return new Promise((resolve) => {
-    chrome.storage.sync.set({ [STORAGE_KEY]: bookmarks }, resolve);
-  });
+  // Find IDs that are being removed so their individual keys can be deleted.
+  const { [INDEX_KEY]: currentIds = [] } = await storageGet([INDEX_KEY]);
+  const newIdSet = new Set(bookmarks.map(b => b.id));
+  const removedKeys = currentIds
+    .filter(id => !newIdSet.has(id))
+    .map(id => BM_PREFIX + id);
+
+  const toSet = { [INDEX_KEY]: bookmarks.map(b => b.id) };
+  for (const bm of bookmarks) {
+    toSet[BM_PREFIX + bm.id] = bm;
+  }
+
+  if (removedKeys.length > 0) await storageRemove(removedKeys);
+  await storageSet(toSet);
+}
+
+// One-time migration: move the old monolithic tagmark_bookmarks array into the
+// new per-bookmark key layout and delete the legacy key.
+async function migrateLegacyStorage() {
+  const result = await storageGet([STORAGE_KEY]);
+  const bookmarks = result[STORAGE_KEY];
+
+  if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
+    // Fresh install — just initialise an empty index.
+    await storageSet({ [INDEX_KEY]: [] });
+    return [];
+  }
+
+  const toSet = { [INDEX_KEY]: bookmarks.map(b => b.id) };
+  for (const bm of bookmarks) {
+    toSet[BM_PREFIX + bm.id] = bm;
+  }
+  await storageSet(toSet);
+  await storageRemove([STORAGE_KEY]);
+
+  console.log(`[TagMark] migrated ${bookmarks.length} bookmarks to sharded storage`);
+  return bookmarks;
 }
 
 async function saveBookmark(bookmark) {
