@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TagMark Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="9" r="2" fill="currentColor"/>
+        </svg>
+        <span class="brand-name">TagMark</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-filter="all" id="filterAll">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
+          <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
+          <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
+          <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
+        </svg>
+        All bookmarks
+        <span class="nav-count" id="allCount">0</span>
+      </button>
+      <button class="nav-item" data-filter="pinned" id="filterPinned">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Pinned
+        <span class="nav-count" id="pinnedCount">0</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-section-label">Tags</div>
+    <div class="tag-filter-list" id="tagFilterList">
+      <!-- Tag filter items rendered by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="icon-text-btn" id="importBtn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <polyline points="17,8 12,3 7,8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Import JSON
+      </button>
+      <button class="icon-text-btn" id="exportBtn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <polyline points="17,8 12,13 7,8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="3" x2="12" y2="13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Export JSON
+      </button>
+      <button class="icon-text-btn theme-btn" id="themeToggle">
+        <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.75"/>
+          <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        <svg class="icon moon-icon" viewBox="0 0 24 24" fill="none" style="display:none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Toggle theme
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main" id="main">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none">
+          <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input
+          class="search-input"
+          type="search"
+          id="searchInput"
+          placeholder="Search by title, URL, or notes…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <kbd class="search-hint">⌘K</kbd>
+      </div>
+
+      <div class="sort-wrap">
+        <label class="sort-label" for="sortSelect">Sort:</label>
+        <select class="sort-select" id="sortSelect">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="alpha">A → Z</option>
+          <option value="alpha-desc">Z → A</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Active tag filters row -->
+    <div class="active-filters" id="activeFilters" style="display:none">
+      <span class="filter-label">Filtering by:</span>
+      <div class="active-tag-chips" id="activeTagChips"></div>
+      <button class="clear-filters" id="clearFilters">Clear all</button>
+    </div>
+
+    <!-- Bookmarks grid -->
+    <div class="bookmarks-area" id="bookmarksArea">
+      <div class="loading-state" id="loadingState">
+        <div class="spinner"></div>
+      </div>
+      <div class="bookmark-grid" id="bookmarkGrid" style="display:none"></div>
+      <div class="empty-state" id="emptyState" style="display:none">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h3 class="empty-title" id="emptyTitle">No bookmarks yet</h3>
+        <p class="empty-desc" id="emptyDesc">Click the TagMark icon in your toolbar to save your first bookmark.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Edit modal -->
+  <div class="modal-overlay" id="modalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Edit Bookmark</h2>
+        <button class="icon-btn" id="closeModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <form class="modal-form" id="editForm" autocomplete="off">
+        <input type="hidden" id="editId">
+
+        <div class="form-field">
+          <label class="form-label" for="editTitle">Title</label>
+          <input class="form-input" type="text" id="editTitle" placeholder="Page title">
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="editUrl">URL</label>
+          <input class="form-input" type="url" id="editUrl" placeholder="https://…">
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="editTagInput">Tags</label>
+          <div class="tag-input-wrap" id="editTagInputWrap">
+            <div class="tag-chips" id="editTagChips"></div>
+            <input class="tag-input" id="editTagInput" type="text" placeholder="Add tags…" autocomplete="off">
+          </div>
+          <div class="autocomplete-dropdown" id="editAcDropdown" style="display:none"></div>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="editNotes">Notes</label>
+          <textarea class="form-textarea" id="editNotes" rows="4" placeholder="Add a note…"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelEdit">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="importFileInput" accept=".json" style="display:none">
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

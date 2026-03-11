@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TagMark</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup" id="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="9" r="2" fill="currentColor"/>
+        </svg>
+        <span class="brand-name">TagMark</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
+            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <svg class="icon moon-icon" viewBox="0 0 24 24" fill="none" style="display:none">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="openDashboard" title="Open Dashboard" aria-label="Open Dashboard">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Current Page Card -->
+    <div class="page-card" id="pageCard">
+      <div class="page-favicon-wrap">
+        <img class="page-favicon" id="pageFavicon" src="" alt="" />
+        <svg class="favicon-fallback" id="faviconFallback" viewBox="0 0 24 24" fill="none" style="display:none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="page-info">
+        <p class="page-title" id="pageTitle">Loading...</p>
+        <p class="page-url" id="pageUrl">—</p>
+      </div>
+      <button class="pin-btn" id="pinBtn" title="Pin bookmark" aria-label="Pin bookmark">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Already saved banner -->
+    <div class="already-saved" id="alreadySaved" style="display:none">
+      <svg class="icon" viewBox="0 0 24 24" fill="none">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <polyline points="22,4 12,14.01 9,11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Already saved — editing existing bookmark</span>
+    </div>
+
+    <!-- Form -->
+    <form class="form" id="bookmarkForm" autocomplete="off">
+
+      <!-- Tags -->
+      <div class="field">
+        <label class="label" for="tagInput">Tags</label>
+        <div class="tag-input-wrap" id="tagInputWrap">
+          <div class="tag-chips" id="tagChips"></div>
+          <input
+            class="tag-input"
+            id="tagInput"
+            type="text"
+            placeholder="Add tags…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="autocomplete-dropdown" id="autocompleteDropdown" style="display:none"></div>
+      </div>
+
+      <!-- Notes -->
+      <div class="field">
+        <label class="label" for="notesInput">Notes</label>
+        <textarea
+          class="textarea"
+          id="notesInput"
+          placeholder="Add a note about this page…"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button type="submit" class="btn btn-primary" id="saveBtn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="17,21 17,13 7,13 7,21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="7,3 7,8 15,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Save bookmark
+        </button>
+        <button type="button" class="btn btn-danger" id="deleteBtn" style="display:none">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Delete
+        </button>
+      </div>
+    </form>
+
+    <!-- Success toast -->
+    <div class="toast" id="toast" aria-live="polite"></div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

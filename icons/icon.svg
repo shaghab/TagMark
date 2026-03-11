@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Background circle -->
+  <rect width="128" height="128" rx="28" fill="#6366f1"/>
+  <!-- Bookmark shape -->
+  <path d="M84 24H44a8 8 0 0 0-8 8v68l28-18 28 18V32a8 8 0 0 0-8-8z" fill="white" opacity="0.95"/>
+  <!-- Tag dot -->
+  <circle cx="64" cy="52" r="8" fill="#6366f1"/>
+</svg>
