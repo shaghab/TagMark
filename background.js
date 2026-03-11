@@ -126,6 +126,57 @@ function notifyDashboard(action) {
   });
 }
 
+// ── Import Sanitizer ────────────────────────────────────────────────────────
+
+const MAX_TITLE_LEN = 2000;
+const MAX_URL_LEN   = 2048;
+const MAX_NOTES_LEN = 10000;
+const MAX_TAG_LEN   = 100;
+const MAX_TAGS      = 50;
+
+function sanitizeBookmark(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const url = typeof raw.url === 'string' ? raw.url.trim().slice(0, MAX_URL_LEN) : '';
+  if (!isValidUrl(url)) return null;
+
+  const title = typeof raw.title === 'string'
+    ? raw.title.trim().slice(0, MAX_TITLE_LEN)
+    : url;
+
+  const notes = typeof raw.notes === 'string'
+    ? raw.notes.slice(0, MAX_NOTES_LEN)
+    : '';
+
+  const rawTags = Array.isArray(raw.tags) ? raw.tags : [];
+  const tags = rawTags
+    .filter(t => typeof t === 'string')
+    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+    .filter(t => t.length > 0)
+    .slice(0, MAX_TAGS);
+
+  const pinned  = Boolean(raw.pinned);
+  const now     = Date.now();
+  const createdAt = typeof raw.createdAt === 'number' && raw.createdAt > 0
+    ? raw.createdAt
+    : now;
+  const updatedAt = typeof raw.updatedAt === 'number' && raw.updatedAt > 0
+    ? raw.updatedAt
+    : now;
+
+  return {
+    id:         generateId(),
+    url,
+    title,
+    favIconUrl: typeof raw.favIconUrl === 'string' ? raw.favIconUrl.slice(0, MAX_URL_LEN) : '',
+    tags,
+    notes,
+    pinned,
+    createdAt,
+    updatedAt
+  };
+}
+
 // ── Message Handler ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -187,19 +238,23 @@ async function handleMessage(message) {
 
     case 'import-bookmarks': {
       const existing = await getBookmarks();
-      const toImport = message.bookmarks;
+      const toImport = Array.isArray(message.bookmarks) ? message.bookmarks : [];
       const merged = [...existing];
-      toImport.forEach(b => {
+      let imported = 0;
+      for (const raw of toImport) {
+        const b = sanitizeBookmark(raw);
+        if (!b) continue; // skip invalid entries
         const idx = merged.findIndex(e => e.url === b.url);
         if (idx >= 0) {
-          merged[idx] = { ...merged[idx], ...b };
+          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id };
         } else {
-          merged.push({ ...b, id: b.id || generateId() });
+          merged.push(b);
         }
-      });
+        imported++;
+      }
       await saveBookmarks(merged);
       notifyDashboard('bookmarks-imported');
-      return { count: toImport.length };
+      return { count: imported };
     }
 
     case 'export-bookmarks':
