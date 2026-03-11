@@ -65,7 +65,7 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'ftp:', 'file:'];
+  const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
 
   function safeUrl(url) {
     try {

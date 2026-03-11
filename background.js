@@ -57,7 +57,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ── URL Validation ───────────────────────────────────────────────────────────
 
-const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'ftp:', 'file:'];
+const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
 
 function isValidUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -129,9 +129,13 @@ function generateId() {
 }
 
 function notifyDashboard(action) {
+  // Match only tabs showing this extension's own dashboard page.
+  // A loose .includes() check would also match web pages whose URL
+  // happens to contain 'dashboard.html' (A01 – Broken Access Control).
+  const dashboardUrl = chrome.runtime.getURL('dashboard.html');
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach(tab => {
-      if (tab.url && tab.url.includes('dashboard.html')) {
+      if (tab.url && tab.url.startsWith(dashboardUrl)) {
         chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
       }
     });
@@ -322,8 +326,13 @@ async function handleMessage(message) {
     }
 
     case 'save-settings': {
+      // Only persist recognised theme values; reject arbitrary objects (A08).
+      const VALID_THEMES = ['light', 'dark'];
+      const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
+        ? message.settings.theme
+        : 'light';
       return new Promise(resolve => {
-        chrome.storage.sync.set({ [SETTINGS_KEY]: message.settings }, () => resolve({ success: true }));
+        chrome.storage.sync.set({ [SETTINGS_KEY]: { theme } }, () => resolve({ success: true }));
       });
     }
 
