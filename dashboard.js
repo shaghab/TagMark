@@ -85,7 +85,7 @@
 
   function formatDate(ts) {
     const d = new Date(ts);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
   // ── Load / refresh ─────────────────────────────────────────────────────────
