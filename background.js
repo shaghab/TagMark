@@ -129,9 +129,13 @@ function generateId() {
 }
 
 function notifyDashboard(action) {
+  // Match only tabs showing this extension's own dashboard page.
+  // A loose .includes() check would also match web pages whose URL
+  // happens to contain 'dashboard.html' (A01 – Broken Access Control).
+  const dashboardUrl = chrome.runtime.getURL('dashboard.html');
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach(tab => {
-      if (tab.url && tab.url.includes('dashboard.html')) {
+      if (tab.url && tab.url.startsWith(dashboardUrl)) {
         chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
       }
     });
