@@ -56,23 +56,6 @@
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
-  function getTheme() {
-    return localStorage.getItem('tagmark_theme') || 'light';
-  }
-
-  function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    const sun = themeToggle.querySelector('.sun-icon');
-    const moon = themeToggle.querySelector('.moon-icon');
-    if (theme === 'dark') {
-      sun.style.display = 'none';
-      moon.style.display = '';
-    } else {
-      sun.style.display = '';
-      moon.style.display = 'none';
-    }
-  }
-
   themeToggle.addEventListener('click', () => {
     const next = getTheme() === 'dark' ? 'light' : 'dark';
     localStorage.setItem('tagmark_theme', next);
@@ -81,22 +64,6 @@
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
-  function tagColorIndex(tag) {
-    let hash = 0;
-    for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) | 0;
-    return Math.abs(hash) % 8;
-  }
-
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function escAttr(str) {
-    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
 
   const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'ftp:', 'file:'];
 
@@ -112,13 +79,6 @@
   function formatDate(ts) {
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  function formatUrl(url) {
-    try {
-      const u = new URL(url);
-      return u.hostname + (u.pathname !== '/' ? u.pathname : '');
-    } catch { return url; }
   }
 
   // ── Load / refresh ─────────────────────────────────────────────────────────
@@ -203,7 +163,7 @@
     activeFiltersRow.style.display = '';
     activeTagChips.innerHTML = selectedTagFilters.map(tag => {
       const ci = tagColorIndex(tag);
-      return `<span class="tag-chip tc-${ci}" data-tag="${escAttr(tag)}" style="cursor:pointer">
+      return `<span class="tag-chip tc-${ci} active-filter-chip" data-tag="${escAttr(tag)}">
         ${escHtml(tag)} ×
       </span>`;
     }).join('');
@@ -328,17 +288,16 @@
     });
     bookmarkGrid.querySelectorAll('.card-favicon').forEach(img => {
       img.addEventListener('error', function () {
-        this.style.display = 'none';
-        this.nextElementSibling.style.display = '';
+        this.classList.add('hidden');
+        this.nextElementSibling.classList.remove('hidden');
       });
     });
   }
 
   function renderCard(b) {
-    const ci_pin = b.pinned ? ' pinned' : '';
     const faviconSrc = escAttr(b.favIconUrl || '');
-    const faviconVisible = b.favIconUrl ? '' : 'display:none;';
-    const faviconFallVisible = b.favIconUrl ? 'display:none;' : '';
+    const faviconHiddenClass = b.favIconUrl ? '' : ' hidden';
+    const faviconFallHiddenClass = b.favIconUrl ? ' hidden' : '';
 
     const tagsHtml = (b.tags || []).map(t => {
       const ci = tagColorIndex(t);
@@ -352,8 +311,8 @@
     return `
       <article class="bookmark-card${b.pinned ? ' pinned' : ''}" data-id="${escAttr(b.id)}">
         <div class="card-header">
-          <img class="card-favicon" src="${faviconSrc}" alt="" style="${faviconVisible}" />
-          <svg class="card-favicon-fallback" style="${faviconFallVisible}" viewBox="0 0 24 24" fill="none">
+          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" alt="" />
+          <svg class="card-favicon-fallback${faviconFallHiddenClass}" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>
           </svg>
@@ -473,7 +432,7 @@
       const ci = tagColorIndex(tag);
       const chip = document.createElement('span');
       chip.className = `tag-chip tc-${ci}`;
-      chip.innerHTML = `${escHtml(tag)}<button class="chip-remove" data-tag="${escAttr(tag)}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:none;background:transparent;cursor:pointer;padding:0;color:inherit;opacity:0.7;border-radius:50%;margin-left:4px;">
+      chip.innerHTML = `${escHtml(tag)}<button class="chip-remove" data-tag="${escAttr(tag)}" aria-label="Remove tag ${escAttr(tag)}">
         <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
       </button>`;
       editTagChips.appendChild(chip);
