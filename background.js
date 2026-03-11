@@ -326,8 +326,13 @@ async function handleMessage(message) {
     }
 
     case 'save-settings': {
+      // Only persist recognised theme values; reject arbitrary objects (A08).
+      const VALID_THEMES = ['light', 'dark'];
+      const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
+        ? message.settings.theme
+        : 'light';
       return new Promise(resolve => {
-        chrome.storage.sync.set({ [SETTINGS_KEY]: message.settings }, () => resolve({ success: true }));
+        chrome.storage.sync.set({ [SETTINGS_KEY]: { theme } }, () => resolve({ success: true }));
       });
     }
 
