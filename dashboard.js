@@ -335,7 +335,6 @@
   }
 
   function renderCard(b) {
-    const ci_pin = b.pinned ? ' pinned' : '';
     const faviconSrc = escAttr(b.favIconUrl || '');
     const faviconVisible = b.favIconUrl ? '' : 'display:none;';
     const faviconFallVisible = b.favIconUrl ? 'display:none;' : '';
