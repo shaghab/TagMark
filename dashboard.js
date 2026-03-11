@@ -98,6 +98,17 @@
     return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'ftp:', 'file:'];
+
+  function safeUrl(url) {
+    try {
+      const parsed = new URL(String(url));
+      return ALLOWED_URL_SCHEMES.includes(parsed.protocol) ? url : '#';
+    } catch {
+      return '#';
+    }
+  }
+
   function formatDate(ts) {
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -347,7 +358,7 @@
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>
           </svg>
           <div class="card-title-wrap">
-            <a class="card-title" href="${escAttr(b.url)}" target="_blank" rel="noopener noreferrer" title="${escAttr(b.title || b.url)}">${escHtml(b.title || b.url)}</a>
+            <a class="card-title" href="${escAttr(safeUrl(b.url))}" target="_blank" rel="noopener noreferrer" title="${escAttr(b.title || b.url)}">${escHtml(b.title || b.url)}</a>
             <p class="card-url">${escHtml(formatUrl(b.url))}</p>
           </div>
           <button class="card-action-btn card-pin-btn${b.pinned ? ' text-amber' : ''}" data-id="${escAttr(b.id)}" title="${b.pinned ? 'Unpin' : 'Pin'}">
