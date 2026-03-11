@@ -4,7 +4,6 @@ Items are fixed one by one; each fix is committed and pushed, then the entry is 
 
 | # | File(s) | Issue |
 |---|---------|-------|
-| 2 | `dashboard.js:476-478`, `dashboard.css` | Inline styles on `.chip-remove` button inside `renderEditChips` — styles already exist in `popup.css` but are missing from `dashboard.css` |
 | 3 | `popup.js:252`, `dashboard.js:620` | Toast duration mismatch: popup uses 2500 ms, dashboard uses 2800 ms |
 | 4 | `background.js:23-51` | Context menu click handler calls `saveBookmark()` without try-catch; errors silently swallowed |
 | 5 | `dashboard.js:206` | Inline `style="cursor:pointer"` on active-filter tag chips — should be a CSS rule |
