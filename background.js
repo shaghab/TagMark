@@ -234,13 +234,37 @@ async function handleMessage(message) {
     }
 
     case 'update-bookmark': {
-      if (message.bookmark.url && !isValidUrl(message.bookmark.url)) {
+      const incoming = message.bookmark;
+      if (incoming.url && !isValidUrl(incoming.url)) {
         return { error: 'Invalid URL scheme' };
       }
       const bookmarks = await getBookmarks();
-      const idx = bookmarks.findIndex(b => b.id === message.bookmark.id);
+      const idx = bookmarks.findIndex(b => b.id === incoming.id);
       if (idx >= 0) {
-        bookmarks[idx] = { ...bookmarks[idx], ...message.bookmark, updatedAt: Date.now() };
+        const existing = bookmarks[idx];
+        // Only allow explicit mutable fields to be updated (A08).
+        // Spreading message.bookmark directly would let a caller overwrite
+        // immutable fields like id and createdAt.
+        const rawTags = Array.isArray(incoming.tags) ? incoming.tags : existing.tags;
+        bookmarks[idx] = {
+          ...existing,
+          title: typeof incoming.title === 'string'
+            ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.url
+            : existing.title,
+          url: incoming.url
+            ? incoming.url.slice(0, MAX_URL_LEN)
+            : existing.url,
+          notes: typeof incoming.notes === 'string'
+            ? incoming.notes.slice(0, MAX_NOTES_LEN)
+            : existing.notes,
+          tags: rawTags
+            .filter(t => typeof t === 'string')
+            .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+            .filter(t => t.length > 0)
+            .slice(0, MAX_TAGS),
+          pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : existing.pinned,
+          updatedAt: Date.now()
+        };
         await saveBookmarks(bookmarks);
         notifyDashboard('bookmark-updated');
       }
