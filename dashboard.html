@@ -46,6 +46,19 @@
         <!-- Tag filter items rendered by JS -->
       </div>
 
+      <div class="sidebar-section-label folder-section-label">
+        Folders
+        <button class="new-folder-btn" id="newRootFolderBtn" title="New folder">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+            <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="folder-tree" id="folderTree">
+        <!-- Folder tree rendered by JS -->
+      </div>
+
       <div class="sidebar-section-label">Saved On</div>
       <div class="date-filter-tree" id="dateFilterTree">
         <!-- Date tree rendered by JS -->
@@ -188,6 +201,13 @@
         </div>
 
         <div class="form-field">
+          <label class="form-label" for="editFolder">Folder</label>
+          <select class="form-select" id="editFolder">
+            <option value="">— No folder —</option>
+          </select>
+        </div>
+
+        <div class="form-field">
           <label class="form-label" for="editNotes">Notes</label>
           <textarea class="form-textarea" id="editNotes" rows="4" placeholder="Add a note…"></textarea>
         </div>
@@ -202,6 +222,31 @@
 
   <!-- Toast -->
   <div class="toast" id="toast" aria-live="polite"></div>
+
+  <!-- Folder name modal (create / rename) -->
+  <div class="modal-overlay" id="folderModalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+    <div class="modal folder-modal" id="folderModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="folderModalTitle">New Folder</h2>
+        <button class="icon-btn" id="closeFolderModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="folderForm" autocomplete="off">
+        <div class="form-field">
+          <label class="form-label" for="folderNameInput">Name</label>
+          <input class="form-input" type="text" id="folderNameInput" placeholder="Folder name" maxlength="100">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelFolderEdit">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="folderSubmitBtn">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Hidden file input for import -->
   <input type="file" id="importFileInput" accept=".json" style="display:none">

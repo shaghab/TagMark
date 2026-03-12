@@ -5,6 +5,11 @@ const STORAGE_KEY  = 'tagmark_bookmarks'; // legacy — kept only for one-time m
 const SETTINGS_KEY = 'tagmark_settings';
 const INDEX_KEY    = 'tagmark_index';     // ordered array of bookmark IDs
 const BM_PREFIX    = 'tagmark_bm_';      // per-bookmark key: tagmark_bm_<id>
+const FOLDERS_KEY  = 'tagmark_folders';  // array of folder objects
+
+const MAX_FOLDER_NAME_LEN = 100;
+
+const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
 // ── Context Menu Setup ──────────────────────────────────────────────────────
 
@@ -94,6 +99,29 @@ function storageRemove(keys) {
   return new Promise(resolve => chrome.storage.sync.remove(keys, resolve));
 }
 
+// ── Folder Storage Helpers ───────────────────────────────────────────────────
+
+async function getFolders() {
+  const result = await storageGet([FOLDERS_KEY]);
+  if (!Array.isArray(result[FOLDERS_KEY])) {
+    // First run — seed default folders
+    const now = Date.now();
+    const folders = DEFAULT_FOLDER_NAMES.map(name => ({
+      id: generateId(),
+      name,
+      parentId: null,
+      createdAt: now
+    }));
+    await storageSet({ [FOLDERS_KEY]: folders });
+    return folders;
+  }
+  return result[FOLDERS_KEY];
+}
+
+async function saveFolders(folders) {
+  await storageSet({ [FOLDERS_KEY]: folders });
+}
+
 async function getBookmarks() {
   const result = await storageGet([INDEX_KEY]);
   const ids = result[INDEX_KEY];
@@ -176,6 +204,7 @@ async function saveBookmark(bookmark) {
       .slice(0, MAX_TAGS),
     notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
     pinned: Boolean(bookmark.pinned),
+    folderId: typeof bookmark.folderId === 'string' && bookmark.folderId ? bookmark.folderId : null,
     createdAt: existingIndex >= 0 ? bookmarks[existingIndex].createdAt : Date.now(),
     updatedAt: Date.now()
   };
@@ -268,6 +297,7 @@ function sanitizeBookmark(raw) {
     tags,
     notes,
     pinned,
+    folderId: typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
     createdAt,
     updatedAt
   };
@@ -333,6 +363,9 @@ async function handleMessage(message) {
             .filter(t => t.length > 0)
             .slice(0, MAX_TAGS),
           pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : existing.pinned,
+          folderId: typeof incoming.folderId !== 'undefined'
+            ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
+            : (existing.folderId || null),
           updatedAt: Date.now()
         };
         await saveBookmarks(bookmarks);
@@ -352,6 +385,59 @@ async function handleMessage(message) {
         return { pinned: bookmarks[idx].pinned };
       }
       return { success: false };
+    }
+
+    case 'get-folders':
+      return await getFolders();
+
+    case 'create-folder': {
+      const folders = await getFolders();
+      const name = typeof message.name === 'string' ? message.name.trim().slice(0, MAX_FOLDER_NAME_LEN) : '';
+      if (!name) return { error: 'Invalid folder name' };
+      const parentId = typeof message.parentId === 'string' && message.parentId ? message.parentId : null;
+      if (parentId && !folders.find(f => f.id === parentId)) return { error: 'Parent folder not found' };
+      const folder = { id: generateId(), name, parentId, createdAt: Date.now() };
+      folders.push(folder);
+      await saveFolders(folders);
+      notifyDashboard('folders-updated');
+      return folder;
+    }
+
+    case 'update-folder': {
+      const folders = await getFolders();
+      const idx = folders.findIndex(f => f.id === message.id);
+      if (idx < 0) return { error: 'Folder not found' };
+      const name = typeof message.name === 'string' ? message.name.trim().slice(0, MAX_FOLDER_NAME_LEN) : '';
+      if (!name) return { error: 'Invalid folder name' };
+      folders[idx] = { ...folders[idx], name };
+      await saveFolders(folders);
+      notifyDashboard('folders-updated');
+      return { success: true };
+    }
+
+    case 'delete-folder': {
+      const folders = await getFolders();
+      const toDelete = new Set();
+      const collectDescendants = id => {
+        toDelete.add(id);
+        folders.filter(f => f.parentId === id).forEach(f => collectDescendants(f.id));
+      };
+      collectDescendants(message.id);
+      await saveFolders(folders.filter(f => !toDelete.has(f.id)));
+      // Unassign bookmarks from deleted folders
+      const bookmarks = await getBookmarks();
+      let changed = false;
+      bookmarks.forEach(b => {
+        if (b.folderId && toDelete.has(b.folderId)) {
+          b.folderId = null;
+          b.updatedAt = Date.now();
+          changed = true;
+        }
+      });
+      if (changed) await saveBookmarks(bookmarks);
+      notifyDashboard('folders-updated');
+      if (changed) notifyDashboard('bookmark-updated');
+      return { success: true };
     }
 
     case 'get-all-tags': {

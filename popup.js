@@ -8,6 +8,7 @@
   let currentTab = null;
   let existingBookmark = null;
   let allTags = [];
+  let allFolders = [];
   let selectedTags = [];
   let isPinned = false;
 
@@ -188,7 +189,8 @@
       favIconUrl: currentTab.favIconUrl || '',
       tags: [...selectedTags],
       notes: notesInput.value.trim(),
-      pinned: isPinned
+      pinned: isPinned,
+      folderId: $('folderSelect').value || null
     };
 
     try {
@@ -227,15 +229,44 @@
     toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
   }
 
+  // ── Folder select ─────────────────────────────────────────────────────────
+
+  function populateFolderSelect() {
+    const sel = $('folderSelect');
+    sel.innerHTML = '<option value="">— No folder —</option>';
+    const addOptions = (parentId, depth) => {
+      allFolders
+        .filter(f => f.parentId === parentId)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = '\u00A0\u00A0'.repeat(depth * 2) + f.name;
+          sel.appendChild(opt);
+          addOptions(f.id, depth + 1);
+        });
+    };
+    addOptions(null, 0);
+  }
+
   // ── Load current tab ──────────────────────────────────────────────────────
 
   async function init() {
     applyTheme(getTheme());
 
-    // Get all tags for autocomplete
+    // Get all tags for autocomplete and folders for select
     try {
-      allTags = await chrome.runtime.sendMessage({ action: 'get-all-tags' });
-    } catch { allTags = []; }
+      [allTags, allFolders] = await Promise.all([
+        chrome.runtime.sendMessage({ action: 'get-all-tags' }),
+        chrome.runtime.sendMessage({ action: 'get-folders' })
+      ]);
+      if (!Array.isArray(allTags)) allTags = [];
+      if (!Array.isArray(allFolders)) allFolders = [];
+    } catch {
+      allTags = [];
+      allFolders = [];
+    }
+    populateFolderSelect();
 
     // Get current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -270,6 +301,9 @@
       notesInput.value = existingBookmark.notes || '';
       isPinned = existingBookmark.pinned || false;
       pinBtn.classList.toggle('pinned', isPinned);
+      if (existingBookmark.folderId) {
+        $('folderSelect').value = existingBookmark.folderId;
+      }
       deleteBtn.style.display = '';
 
       // Re-label save button
