@@ -437,6 +437,40 @@ body {
   background: var(--bg);
 }
 
+/* ── Pill group (GTD / Type) ────────────────────────── */
+
+.pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pill-btn {
+  padding: 4px 11px;
+  border: 1.5px solid var(--border);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.pill-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.pill-btn.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 /* ── Actions ────────────────────────────────────────── */
 
 .actions {

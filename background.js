@@ -205,6 +205,8 @@ async function saveBookmark(bookmark) {
     notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
     pinned: Boolean(bookmark.pinned),
     folderId: typeof bookmark.folderId === 'string' && bookmark.folderId ? bookmark.folderId : null,
+    gtdStatus:   GTD_STATUSES.includes(bookmark.gtdStatus)    ? bookmark.gtdStatus   : (existingIndex >= 0 ? (bookmarks[existingIndex].gtdStatus   || null) : null),
+    contentType: CONTENT_TYPES.includes(bookmark.contentType) ? bookmark.contentType : (existingIndex >= 0 ? (bookmarks[existingIndex].contentType || null) : null),
     createdAt: existingIndex >= 0 ? bookmarks[existingIndex].createdAt : Date.now(),
     updatedAt: Date.now()
   };
@@ -244,6 +246,9 @@ const MAX_URL_LEN    = 2048;
 const MAX_NOTES_LEN  = 10000;
 const MAX_TAG_LEN    = 100;
 const MAX_TAGS       = 50;
+
+const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done'];
+const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try'];
 
 // Allow only http/https favicons and inline data images (A03 – Injection).
 // javascript: and data:text/html URIs must never reach an img.src attribute.
@@ -297,7 +302,9 @@ function sanitizeBookmark(raw) {
     tags,
     notes,
     pinned,
-    folderId: typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
+    folderId:    typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
+    gtdStatus:   GTD_STATUSES.includes(raw.gtdStatus)    ? raw.gtdStatus   : null,
+    contentType: CONTENT_TYPES.includes(raw.contentType) ? raw.contentType : null,
     createdAt,
     updatedAt
   };
@@ -366,6 +373,12 @@ async function handleMessage(message) {
           folderId: typeof incoming.folderId !== 'undefined'
             ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
             : (existing.folderId || null),
+          gtdStatus: typeof incoming.gtdStatus !== 'undefined'
+            ? (GTD_STATUSES.includes(incoming.gtdStatus) ? incoming.gtdStatus : null)
+            : (existing.gtdStatus || null),
+          contentType: typeof incoming.contentType !== 'undefined'
+            ? (CONTENT_TYPES.includes(incoming.contentType) ? incoming.contentType : null)
+            : (existing.contentType || null),
           updatedAt: Date.now()
         };
         await saveBookmarks(bookmarks);

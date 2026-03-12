@@ -11,6 +11,8 @@
   let allFolders = [];
   let selectedTags = [];
   let isPinned = false;
+  let gtdStatus = null;
+  let contentType = null;
 
   // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -33,6 +35,8 @@
   const saveBtn      = $('saveBtn');
   const deleteBtn    = $('deleteBtn');
   const toast        = $('toast');
+  const gtdGroup     = $('gtdGroup');
+  const typeGroup    = $('typeGroup');
 
   // ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -156,6 +160,27 @@
     }
   });
 
+  // ── Pill groups (GTD / Type) ──────────────────────────────────────────────
+
+  function setupPillGroup(groupEl, getVal, setVal) {
+    groupEl.addEventListener('click', e => {
+      const btn = e.target.closest('.pill-btn');
+      if (!btn) return;
+      const val = btn.dataset.value;
+      const isActive = btn.classList.contains('active');
+      groupEl.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      if (!isActive) {
+        btn.classList.add('active');
+        setVal(val);
+      } else {
+        setVal(null);
+      }
+    });
+  }
+
+  setupPillGroup(gtdGroup,  () => gtdStatus,   v => { gtdStatus = v; });
+  setupPillGroup(typeGroup, () => contentType, v => { contentType = v; });
+
   // ── Pin button ────────────────────────────────────────────────────────────
 
   pinBtn.addEventListener('click', () => {
@@ -190,7 +215,9 @@
       tags: [...selectedTags],
       notes: notesInput.value.trim(),
       pinned: isPinned,
-      folderId: $('folderSelect').value || null
+      folderId: $('folderSelect').value || null,
+      gtdStatus,
+      contentType
     };
 
     try {
@@ -303,6 +330,14 @@
       pinBtn.classList.toggle('pinned', isPinned);
       if (existingBookmark.folderId) {
         $('folderSelect').value = existingBookmark.folderId;
+      }
+      if (existingBookmark.gtdStatus) {
+        gtdStatus = existingBookmark.gtdStatus;
+        gtdGroup.querySelector(`[data-value="${existingBookmark.gtdStatus}"]`)?.classList.add('active');
+      }
+      if (existingBookmark.contentType) {
+        contentType = existingBookmark.contentType;
+        typeGroup.querySelector(`[data-value="${existingBookmark.contentType}"]`)?.classList.add('active');
       }
       deleteBtn.style.display = '';
 

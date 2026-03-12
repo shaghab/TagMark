@@ -15,9 +15,13 @@
   let dateTreeOpenYears  = new Set();
   let dateTreeOpenMonths = new Set();
   let activeFilter = 'all'; // 'all' | 'pinned'
+  let selectedGtdFilter  = null; // null | GTD_STATUSES value
+  let selectedTypeFilter = null; // null | CONTENT_TYPES value
   let searchQuery = '';
   let sortOrder = 'newest';
   let editTags = [];
+  let editGtdStatus = null;
+  let editContentType = null;
   let editAcItems = [];
   let editAcActive = -1;
   let tagSortOrder = 'recent'; // 'recent' | 'name' | 'count'
@@ -62,6 +66,8 @@
   const editTagInput     = $('editTagInput');
   const editAcDropdown   = $('editAcDropdown');
   const editNotes        = $('editNotes');
+  const gtdFilterList    = $('gtdFilterList');
+  const typeFilterList   = $('typeFilterList');
   const themeToggle      = $('themeToggle');
   const importBtn        = $('importBtn');
   const exportBtn        = $('exportBtn');
@@ -111,6 +117,8 @@
       allFolders = [];
     }
     renderSidebar();
+    renderGtdFilter();
+    renderTypeFilter();
     renderDateTree();
     renderFolderTree();
     renderGrid();
@@ -187,6 +195,52 @@
       });
       tagFilterList.appendChild(moreBtn);
     }
+  }
+
+  // ── GTD & Type sidebar filters ─────────────────────────────────────────────
+
+  function renderGtdFilter() {
+    const counts = {};
+    allBookmarks.forEach(b => {
+      if (b.gtdStatus) counts[b.gtdStatus] = (counts[b.gtdStatus] || 0) + 1;
+    });
+    gtdFilterList.innerHTML = '';
+    GTD_STATUSES.forEach(status => {
+      const count = counts[status] || 0;
+      const item = document.createElement('button');
+      item.className = 'status-filter-item gtd-item gtd-' + status + (selectedGtdFilter === status ? ' active' : '');
+      item.dataset.value = status;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(status.charAt(0).toUpperCase() + status.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.addEventListener('click', () => {
+        selectedGtdFilter = selectedGtdFilter === status ? null : status;
+        renderGtdFilter();
+        renderActiveFilters();
+        renderGrid();
+      });
+      gtdFilterList.appendChild(item);
+    });
+  }
+
+  function renderTypeFilter() {
+    const counts = {};
+    allBookmarks.forEach(b => {
+      if (b.contentType) counts[b.contentType] = (counts[b.contentType] || 0) + 1;
+    });
+    typeFilterList.innerHTML = '';
+    CONTENT_TYPES.forEach(type => {
+      const count = counts[type] || 0;
+      const item = document.createElement('button');
+      item.className = 'status-filter-item type-item type-' + type + (selectedTypeFilter === type ? ' active' : '');
+      item.dataset.value = type;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(type.charAt(0).toUpperCase() + type.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.addEventListener('click', () => {
+        selectedTypeFilter = selectedTypeFilter === type ? null : type;
+        renderTypeFilter();
+        renderActiveFilters();
+        renderGrid();
+      });
+      typeFilterList.appendChild(item);
+    });
   }
 
   // ── Date tree ──────────────────────────────────────────────────────────────
@@ -540,7 +594,11 @@
     selectedTagFilters = [];
     selectedDateFilter = null;
     selectedFolderFilter = null;
+    selectedGtdFilter  = null;
+    selectedTypeFilter = null;
     renderSidebar();
+    renderGtdFilter();
+    renderTypeFilter();
     renderDateTree();
     renderFolderTree();
     renderActiveFilters();
@@ -553,8 +611,10 @@
     const hasTagFilters  = selectedTagFilters.length > 0;
     const hasDateFilter  = selectedDateFilter !== null;
     const hasFolderFilter = selectedFolderFilter !== null;
+    const hasGtdFilter   = selectedGtdFilter !== null;
+    const hasTypeFilter  = selectedTypeFilter !== null;
 
-    if (!hasTagFilters && !hasDateFilter && !hasFolderFilter) {
+    if (!hasTagFilters && !hasDateFilter && !hasFolderFilter && !hasGtdFilter && !hasTypeFilter) {
       activeFiltersRow.style.display = 'none';
       return;
     }
@@ -578,10 +638,34 @@
           `${escHtml(folderPath.join(' / '))} ×</span>`
       : '';
 
-    activeTagChips.innerHTML = tagChipsHtml + dateChipHtml + folderChipHtml;
+    const gtdChipHtml = hasGtdFilter
+      ? `<span class="gtd-chip active-filter-chip gtd-${escAttr(selectedGtdFilter)}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(selectedGtdFilter.charAt(0).toUpperCase() + selectedGtdFilter.slice(1))} ×</span>`
+      : '';
+
+    const typeChipHtml = hasTypeFilter
+      ? `<span class="type-chip active-filter-chip type-${escAttr(selectedTypeFilter)}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(selectedTypeFilter.charAt(0).toUpperCase() + selectedTypeFilter.slice(1))} ×</span>`
+      : '';
+
+    activeTagChips.innerHTML = tagChipsHtml + gtdChipHtml + typeChipHtml + dateChipHtml + folderChipHtml;
 
     activeTagChips.querySelectorAll('.tag-chip').forEach(chip => {
       chip.addEventListener('click', () => toggleTagFilter(chip.dataset.tag));
+    });
+    activeTagChips.querySelectorAll('.gtd-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        selectedGtdFilter = null;
+        renderGtdFilter();
+        renderActiveFilters();
+        renderGrid();
+      });
+    });
+    activeTagChips.querySelectorAll('.type-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        selectedTypeFilter = null;
+        renderTypeFilter();
+        renderActiveFilters();
+        renderGrid();
+      });
     });
     activeTagChips.querySelectorAll('.date-chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -656,6 +740,16 @@
     if (selectedFolderFilter) {
       const folderIds = getFolderDescendantIds(selectedFolderFilter);
       list = list.filter(b => folderIds.has(b.folderId));
+    }
+
+    // Filter by GTD status
+    if (selectedGtdFilter) {
+      list = list.filter(b => b.gtdStatus === selectedGtdFilter);
+    }
+
+    // Filter by content type
+    if (selectedTypeFilter) {
+      list = list.filter(b => b.contentType === selectedTypeFilter);
     }
 
     // Filter by search query
@@ -763,6 +857,16 @@
       ? `<p class="card-notes">${escHtml(b.notes)}</p>`
       : '';
 
+    const gtdHtml = b.gtdStatus
+      ? `<span class="card-badge gtd-badge gtd-${escAttr(b.gtdStatus)}">${escHtml(b.gtdStatus.charAt(0).toUpperCase() + b.gtdStatus.slice(1))}</span>`
+      : '';
+    const typeHtml = b.contentType
+      ? `<span class="card-badge type-badge type-${escAttr(b.contentType)}">${escHtml(b.contentType.charAt(0).toUpperCase() + b.contentType.slice(1))}</span>`
+      : '';
+    const badgesHtml = (gtdHtml || typeHtml)
+      ? `<div class="card-badges">${gtdHtml}${typeHtml}</div>`
+      : '';
+
     const folderPath = b.folderId ? getFolderPath(b.folderId) : null;
     const folderHtml = folderPath && folderPath.length
       ? `<div class="card-folder">` +
@@ -791,6 +895,7 @@
             </svg>
           </button>
         </div>
+        ${badgesHtml}
         ${folderHtml}
         ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
         ${notesHtml}
@@ -853,6 +958,18 @@
     renderEditChips();
     populateFolderSelect($('editFolder'), b.folderId || '');
 
+    // Set GTD status pills
+    editGtdStatus = b.gtdStatus || null;
+    $('editGtdGroup').querySelectorAll('.pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === editGtdStatus);
+    });
+
+    // Set content type pills
+    editContentType = b.contentType || null;
+    $('editTypeGroup').querySelectorAll('.pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === editContentType);
+    });
+
     modalOverlay.style.display = '';
     setTimeout(() => editTitle.focus(), 100);
   }
@@ -860,6 +977,8 @@
   function closeEditModal() {
     modalOverlay.style.display = 'none';
     editTags = [];
+    editGtdStatus = null;
+    editContentType = null;
     editAcItems = [];
     editAcActive = -1;
     editAcDropdown.style.display = 'none';
@@ -869,6 +988,25 @@
   cancelEdit.addEventListener('click', closeEditModal);
   modalOverlay.addEventListener('click', e => {
     if (e.target === modalOverlay) closeEditModal();
+  });
+
+  // Pill group interactivity in edit modal
+  $('editGtdGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const isActive = btn.classList.contains('active');
+    $('editGtdGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+    if (!isActive) { btn.classList.add('active'); editGtdStatus = btn.dataset.value; }
+    else editGtdStatus = null;
+  });
+
+  $('editTypeGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const isActive = btn.classList.contains('active');
+    $('editTypeGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+    if (!isActive) { btn.classList.add('active'); editContentType = btn.dataset.value; }
+    else editContentType = null;
   });
 
   editForm.addEventListener('submit', async e => {
@@ -883,7 +1021,9 @@
       url: editUrl.value.trim() || b.url,
       tags: [...editTags],
       notes: editNotes.value.trim(),
-      folderId: $('editFolder').value || null
+      folderId: $('editFolder').value || null,
+      gtdStatus: editGtdStatus,
+      contentType: editContentType
     };
 
     const result = await chrome.runtime.sendMessage({ action: 'update-bookmark', bookmark: updated });

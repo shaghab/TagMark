@@ -59,6 +59,16 @@
         <!-- Folder tree rendered by JS -->
       </div>
 
+      <div class="sidebar-section-label">GTD Status</div>
+      <div class="gtd-filter-list" id="gtdFilterList">
+        <!-- GTD filter items rendered by JS -->
+      </div>
+
+      <div class="sidebar-section-label">Content Type</div>
+      <div class="type-filter-list" id="typeFilterList">
+        <!-- Type filter items rendered by JS -->
+      </div>
+
       <div class="sidebar-section-label">Saved On</div>
       <div class="date-filter-tree" id="dateFilterTree">
         <!-- Date tree rendered by JS -->
@@ -205,6 +215,28 @@
           <select class="form-select" id="editFolder">
             <option value="">— No folder —</option>
           </select>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label">GTD Status</label>
+          <div class="pill-group" id="editGtdGroup">
+            <button type="button" class="pill-btn" data-value="next">Next</button>
+            <button type="button" class="pill-btn" data-value="later">Later</button>
+            <button type="button" class="pill-btn" data-value="someday">Someday</button>
+            <button type="button" class="pill-btn" data-value="waiting">Waiting</button>
+            <button type="button" class="pill-btn" data-value="done">Done</button>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label">Type</label>
+          <div class="pill-group" id="editTypeGroup">
+            <button type="button" class="pill-btn" data-value="read">Read</button>
+            <button type="button" class="pill-btn" data-value="watch">Watch</button>
+            <button type="button" class="pill-btn" data-value="listen">Listen</button>
+            <button type="button" class="pill-btn" data-value="learn">Learn</button>
+            <button type="button" class="pill-btn" data-value="try">Try</button>
+          </div>
         </div>
 
         <div class="form-field">
