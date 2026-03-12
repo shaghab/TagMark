@@ -249,8 +249,8 @@ const MAX_NOTES_LEN  = 10000;
 const MAX_TAG_LEN    = 100;
 const MAX_TAGS       = 50;
 
-const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done'];
-const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try'];
+const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
+const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 const PRIORITY_SCORE  = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
