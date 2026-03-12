@@ -45,6 +45,11 @@ function applyTheme(theme) {
   }
 }
 
+// ── GTD & Content Type ────────────────────────────────────────────────────────
+
+const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done'];
+const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try'];
+
 // ── URL formatting ───────────────────────────────────────────────────────────
 
 function formatUrl(url) {
