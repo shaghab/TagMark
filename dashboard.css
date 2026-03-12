@@ -1455,6 +1455,19 @@ body {
   font-weight: 600;
 }
 
+/* Priority pill active states (urgency / importance) */
+.pill-priority[data-value="critical"].active { background: #fef2f2; color: #b91c1c; border-color: #ef4444; }
+.pill-priority[data-value="high"].active     { background: #fff7ed; color: #c2410c; border-color: #f97316; }
+.pill-priority[data-value="medium"].active   { background: #fffbeb; color: #92400e; border-color: #f59e0b; }
+.pill-priority[data-value="low"].active      { background: #ecfdf5; color: #065f46; border-color: #10b981; }
+.pill-priority[data-value="none"].active     { background: var(--bg-tertiary); color: var(--text-muted); border-color: var(--border); }
+
+[data-theme="dark"] .pill-priority[data-value="critical"].active { background: #2a1515; color: #fca5a5; border-color: #ef4444; }
+[data-theme="dark"] .pill-priority[data-value="high"].active     { background: #1f1208; color: #fdba74; border-color: #f97316; }
+[data-theme="dark"] .pill-priority[data-value="medium"].active   { background: #1c1500; color: #fde68a; border-color: #f59e0b; }
+[data-theme="dark"] .pill-priority[data-value="low"].active      { background: #0d2318; color: #6ee7b7; border-color: #10b981; }
+[data-theme="dark"] .pill-priority[data-value="none"].active     { background: var(--bg-tertiary); color: var(--text-muted); border-color: var(--border); }
+
 /* ── Status/type sidebar filter items ────────────────── */
 
 .gtd-filter-list,
@@ -1581,6 +1594,17 @@ body {
 [data-theme="dark"] .type-badge.type-listen  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-badge.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-badge.type-try     { background: #1c1500; color: #fde68a; }
+
+/* Score badge colors (urgency × importance) */
+.score-badge.score-critical { background: #fef2f2; color: #b91c1c; }
+.score-badge.score-high     { background: #fff7ed; color: #c2410c; }
+.score-badge.score-medium   { background: #fffbeb; color: #92400e; }
+.score-badge.score-low      { background: var(--bg-tertiary); color: var(--text-muted); }
+
+[data-theme="dark"] .score-badge.score-critical { background: #2a1515; color: #fca5a5; }
+[data-theme="dark"] .score-badge.score-high     { background: #1f1208; color: #fdba74; }
+[data-theme="dark"] .score-badge.score-medium   { background: #1c1500; color: #fde68a; }
+[data-theme="dark"] .score-badge.score-low      { background: var(--bg-tertiary); color: var(--text-muted); }
 
 /* ── GTD / Type active-filter chips ──────────────────── */
 

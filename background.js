@@ -207,6 +207,8 @@ async function saveBookmark(bookmark) {
     folderId: typeof bookmark.folderId === 'string' && bookmark.folderId ? bookmark.folderId : null,
     gtdStatus:   GTD_STATUSES.includes(bookmark.gtdStatus)    ? bookmark.gtdStatus   : (existingIndex >= 0 ? (bookmarks[existingIndex].gtdStatus   || null) : null),
     contentType: CONTENT_TYPES.includes(bookmark.contentType) ? bookmark.contentType : (existingIndex >= 0 ? (bookmarks[existingIndex].contentType || null) : null),
+    urgency:    PRIORITY_LEVELS.includes(bookmark.urgency)    ? bookmark.urgency    : (existingIndex >= 0 ? (bookmarks[existingIndex].urgency    || null) : null),
+    importance: PRIORITY_LEVELS.includes(bookmark.importance) ? bookmark.importance : (existingIndex >= 0 ? (bookmarks[existingIndex].importance || null) : null),
     createdAt: existingIndex >= 0 ? bookmarks[existingIndex].createdAt : Date.now(),
     updatedAt: Date.now()
   };
@@ -249,6 +251,9 @@ const MAX_TAGS       = 50;
 
 const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done'];
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try'];
+
+const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
+const PRIORITY_SCORE  = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
 
 // Allow only http/https favicons and inline data images (A03 – Injection).
 // javascript: and data:text/html URIs must never reach an img.src attribute.
@@ -305,6 +310,8 @@ function sanitizeBookmark(raw) {
     folderId:    typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
     gtdStatus:   GTD_STATUSES.includes(raw.gtdStatus)    ? raw.gtdStatus   : null,
     contentType: CONTENT_TYPES.includes(raw.contentType) ? raw.contentType : null,
+    urgency:     PRIORITY_LEVELS.includes(raw.urgency)    ? raw.urgency    : null,
+    importance:  PRIORITY_LEVELS.includes(raw.importance) ? raw.importance : null,
     createdAt,
     updatedAt
   };
@@ -379,6 +386,12 @@ async function handleMessage(message) {
           contentType: typeof incoming.contentType !== 'undefined'
             ? (CONTENT_TYPES.includes(incoming.contentType) ? incoming.contentType : null)
             : (existing.contentType || null),
+          urgency: typeof incoming.urgency !== 'undefined'
+            ? (PRIORITY_LEVELS.includes(incoming.urgency) ? incoming.urgency : null)
+            : (existing.urgency || null),
+          importance: typeof incoming.importance !== 'undefined'
+            ? (PRIORITY_LEVELS.includes(incoming.importance) ? incoming.importance : null)
+            : (existing.importance || null),
           updatedAt: Date.now()
         };
         await saveBookmarks(bookmarks);
