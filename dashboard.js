@@ -22,6 +22,8 @@
   let editTags = [];
   let editGtdStatus = null;
   let editContentType = null;
+  let editUrgency = null;
+  let editImportance = null;
   let editAcItems = [];
   let editAcActive = -1;
   let tagSortOrder = 'recent'; // 'recent' | 'name' | 'count'
@@ -84,6 +86,12 @@
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  const PRIORITY_SCORE = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
+
+  function calcScore(b) {
+    return (PRIORITY_SCORE[b.urgency] || 0) * (PRIORITY_SCORE[b.importance] || 0);
+  }
 
   const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
 
@@ -770,6 +778,7 @@
         case 'oldest': return a.createdAt - b.createdAt;
         case 'alpha':  return (a.title||'').localeCompare(b.title||'');
         case 'alpha-desc': return (b.title||'').localeCompare(a.title||'');
+        case 'score':  return calcScore(b) - calcScore(a);
         default:       return b.createdAt - a.createdAt; // newest
       }
     });
@@ -863,8 +872,12 @@
     const typeHtml = b.contentType
       ? `<span class="card-badge type-badge type-${escAttr(b.contentType)}">${escHtml(b.contentType.charAt(0).toUpperCase() + b.contentType.slice(1))}</span>`
       : '';
-    const badgesHtml = (gtdHtml || typeHtml)
-      ? `<div class="card-badges">${gtdHtml}${typeHtml}</div>`
+    const score = calcScore(b);
+    const scoreHtml = score > 0
+      ? `<span class="card-badge score-badge score-${score >= 12 ? 'critical' : score >= 6 ? 'high' : score >= 2 ? 'medium' : 'low'}" title="Urgency: ${escAttr(b.urgency||'none')} · Importance: ${escAttr(b.importance||'none')}">⚡ ${score}</span>`
+      : '';
+    const badgesHtml = (gtdHtml || typeHtml || scoreHtml)
+      ? `<div class="card-badges">${scoreHtml}${gtdHtml}${typeHtml}</div>`
       : '';
 
     const folderPath = b.folderId ? getFolderPath(b.folderId) : null;
@@ -970,6 +983,18 @@
       btn.classList.toggle('active', btn.dataset.value === editContentType);
     });
 
+    // Set urgency pills
+    editUrgency = b.urgency || null;
+    $('editUrgencyGroup').querySelectorAll('.pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === editUrgency);
+    });
+
+    // Set importance pills
+    editImportance = b.importance || null;
+    $('editImportanceGroup').querySelectorAll('.pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === editImportance);
+    });
+
     modalOverlay.style.display = '';
     setTimeout(() => editTitle.focus(), 100);
   }
@@ -979,6 +1004,8 @@
     editTags = [];
     editGtdStatus = null;
     editContentType = null;
+    editUrgency = null;
+    editImportance = null;
     editAcItems = [];
     editAcActive = -1;
     editAcDropdown.style.display = 'none';
@@ -1009,6 +1036,24 @@
     else editContentType = null;
   });
 
+  $('editUrgencyGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const isActive = btn.classList.contains('active');
+    $('editUrgencyGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+    if (!isActive) { btn.classList.add('active'); editUrgency = btn.dataset.value; }
+    else editUrgency = null;
+  });
+
+  $('editImportanceGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const isActive = btn.classList.contains('active');
+    $('editImportanceGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+    if (!isActive) { btn.classList.add('active'); editImportance = btn.dataset.value; }
+    else editImportance = null;
+  });
+
   editForm.addEventListener('submit', async e => {
     e.preventDefault();
     const id = editId.value;
@@ -1023,7 +1068,9 @@
       notes: editNotes.value.trim(),
       folderId: $('editFolder').value || null,
       gtdStatus: editGtdStatus,
-      contentType: editContentType
+      contentType: editContentType,
+      urgency: editUrgency,
+      importance: editImportance
     };
 
     const result = await chrome.runtime.sendMessage({ action: 'update-bookmark', bookmark: updated });

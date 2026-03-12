@@ -13,6 +13,8 @@
   let isPinned = false;
   let gtdStatus = null;
   let contentType = null;
+  let urgency = null;
+  let importance = null;
 
   // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -35,8 +37,10 @@
   const saveBtn      = $('saveBtn');
   const deleteBtn    = $('deleteBtn');
   const toast        = $('toast');
-  const gtdGroup     = $('gtdGroup');
-  const typeGroup    = $('typeGroup');
+  const gtdGroup       = $('gtdGroup');
+  const typeGroup      = $('typeGroup');
+  const urgencyGroup   = $('urgencyGroup');
+  const importanceGroup = $('importanceGroup');
 
   // ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -178,8 +182,10 @@
     });
   }
 
-  setupPillGroup(gtdGroup,  () => gtdStatus,   v => { gtdStatus = v; });
-  setupPillGroup(typeGroup, () => contentType, v => { contentType = v; });
+  setupPillGroup(gtdGroup,       () => gtdStatus,   v => { gtdStatus = v; });
+  setupPillGroup(typeGroup,      () => contentType, v => { contentType = v; });
+  setupPillGroup(urgencyGroup,   () => urgency,     v => { urgency = v; });
+  setupPillGroup(importanceGroup,() => importance,  v => { importance = v; });
 
   // ── Pin button ────────────────────────────────────────────────────────────
 
@@ -217,7 +223,9 @@
       pinned: isPinned,
       folderId: $('folderSelect').value || null,
       gtdStatus,
-      contentType
+      contentType,
+      urgency,
+      importance
     };
 
     try {
@@ -338,6 +346,14 @@
       if (existingBookmark.contentType) {
         contentType = existingBookmark.contentType;
         typeGroup.querySelector(`[data-value="${existingBookmark.contentType}"]`)?.classList.add('active');
+      }
+      if (existingBookmark.urgency) {
+        urgency = existingBookmark.urgency;
+        urgencyGroup.querySelector(`[data-value="${existingBookmark.urgency}"]`)?.classList.add('active');
+      }
+      if (existingBookmark.importance) {
+        importance = existingBookmark.importance;
+        importanceGroup.querySelector(`[data-value="${existingBookmark.importance}"]`)?.classList.add('active');
       }
       deleteBtn.style.display = '';
 
