@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TagMark",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0b3owE/fCE5Xu4I3cmOOEyqMNL+OrU1ja/mc0d9EY91b29nN1xLmiaUVheRAK0b7HXyj5/rJHhq+zEGa0cLsUyNemOS9Uj1ELywwhPhM5Typ1Wy2EBpKTf4ffhb8DReIrzAxRXyVuxYudKenGpN2iqie6bKgerf0Se+eZ99M3FZUojoAiI+sAu0Lt0r4W7+6F1MOb/HhNWJk/9Na/eEwVTxz/hegHV7jj2QEoUKgyDixbXTtonMWb61JJ2i38JoUAA6qB0KDGI/WSpR6QXfnfij5Lpu5y7bUrLsgQznTwrTkQWfuCf6q/GvNy8/lb2W13rD5E3A2OlsFggAZB33zTQIDAQAB",
   "description": "Your bookmarks, with memory. Save, tag, annotate, and search your bookmarks.",
   "author": "TagMark",
