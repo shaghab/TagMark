@@ -75,6 +75,26 @@ const TOAST_DURATION_MS  = 2800; // how long toast notifications stay visible
 const BLUR_HIDE_DELAY_MS = 150;  // delay before hiding autocomplete on input blur
 const AC_MAX_ITEMS       = 8;    // max autocomplete suggestions shown at once
 
+// ── Tag chips ─────────────────────────────────────────────────────────────────
+
+// Renders tag chips into container. Click removal is handled by the caller via
+// event delegation on the container's parent (tagInputWrap / editTagInputWrap).
+function renderTagChips(container, tags) {
+  container.innerHTML = '';
+  tags.forEach(tag => {
+    const ci = tagColorIndex(tag);
+    const chip = document.createElement('span');
+    chip.className = `tag-chip tc-${ci}`;
+    chip.innerHTML =
+      `${escHtml(tag)}<button class="chip-remove" data-tag="${escAttr(tag)}" aria-label="Remove tag ${escAttr(tag)}">` +
+        `<svg width="10" height="10" viewBox="0 0 24 24" fill="none">` +
+          `<line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>` +
+          `<line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>` +
+        `</svg></button>`;
+    container.appendChild(chip);
+  });
+}
+
 // ── Tag normalization ─────────────────────────────────────────────────────────
 
 function normalizeTag(tag) {
