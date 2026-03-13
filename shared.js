@@ -78,9 +78,20 @@ const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'bui
 
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
-const TOAST_DURATION_MS  = 2800; // how long toast notifications stay visible
-const BLUR_HIDE_DELAY_MS = 150;  // delay before hiding autocomplete on input blur
-const AC_MAX_ITEMS       = 8;    // max autocomplete suggestions shown at once
+const TOAST_DURATION_MS   = 2800; // how long toast notifications stay visible
+const BLUR_HIDE_DELAY_MS  = 150;  // delay before hiding autocomplete on input blur
+const AC_MAX_ITEMS        = 8;    // max autocomplete suggestions shown at once
+const SEARCH_DEBOUNCE_MS  = 150;  // delay before re-rendering grid on search input
+
+// Returns a debounced version of fn: defers execution until ms have elapsed
+// since the last call, preventing rapid repeated invocations (e.g. on keystrokes).
+function debounce(fn, ms) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
 
 // ── Tag chips ─────────────────────────────────────────────────────────────────
 

@@ -685,10 +685,10 @@
 
   // ── Search & sort ──────────────────────────────────────────────────────────
 
-  searchInput.addEventListener('input', () => {
+  searchInput.addEventListener('input', debounce(() => {
     searchQuery = searchInput.value.toLowerCase().trim();
     renderGrid();
-  });
+  }, SEARCH_DEBOUNCE_MS));
 
   sortSelect.addEventListener('change', () => {
     sortOrder = sortSelect.value;
