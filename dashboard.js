@@ -222,8 +222,7 @@
       item.addEventListener('click', () => {
         selectedGtdFilter = selectedGtdFilter === status ? null : status;
         renderGtdFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       gtdFilterList.appendChild(item);
     });
@@ -244,8 +243,7 @@
       item.addEventListener('click', () => {
         selectedTypeFilter = selectedTypeFilter === type ? null : type;
         renderTypeFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       typeFilterList.appendChild(item);
     });
@@ -316,8 +314,7 @@
         isYearOpen ? dateTreeOpenYears.delete(yearKey) : dateTreeOpenYears.add(yearKey);
         selectedDateFilter = isYearActive ? null : yearKey;
         renderDateTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       dateFilterTree.appendChild(yearBtn);
 
@@ -344,8 +341,7 @@
           isMonthOpen ? dateTreeOpenMonths.delete(monthKey) : dateTreeOpenMonths.add(monthKey);
           selectedDateFilter = isMonthActive ? null : monthKey;
           renderDateTree();
-          renderActiveFilters();
-          renderGrid();
+          refreshMain();
         });
         dateFilterTree.appendChild(monthBtn);
 
@@ -367,8 +363,7 @@
             e.stopPropagation();
             selectedDateFilter = isDayActive ? null : dayKey;
             renderDateTree();
-            renderActiveFilters();
-            renderGrid();
+            refreshMain();
           });
           dateFilterTree.appendChild(dayBtn);
         });
@@ -458,8 +453,7 @@
         }
         selectedFolderFilter = isActive ? null : folder.id;
         renderFolderTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
 
       container.appendChild(row);
@@ -576,8 +570,7 @@
       selectedTagFilters.push(tag);
     }
     renderSidebar();
-    renderActiveFilters();
-    renderGrid();
+    refreshMain();
   }
 
   sidebarToggle.addEventListener('click', () => {
@@ -609,11 +602,17 @@
     renderTypeFilter();
     renderDateTree();
     renderFolderTree();
-    renderActiveFilters();
-    renderGrid();
+    refreshMain();
   });
 
   // ── Active filters row ─────────────────────────────────────────────────────
+
+  // Convenience: re-render the active-filter chips and the bookmark grid.
+  // Called after any filter state change.
+  function refreshMain() {
+    renderActiveFilters();
+    renderGrid();
+  }
 
   function renderActiveFilters() {
     const hasTagFilters  = selectedTagFilters.length > 0;
@@ -663,32 +662,28 @@
       chip.addEventListener('click', () => {
         selectedGtdFilter = null;
         renderGtdFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.type-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedTypeFilter = null;
         renderTypeFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.date-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedDateFilter = null;
         renderDateTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.folder-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedFolderFilter = null;
         renderFolderTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
   }
@@ -839,8 +834,7 @@
         if (!selectedTagFilters.includes(chip.dataset.tag)) {
           selectedTagFilters.push(chip.dataset.tag);
           renderSidebar();
-          renderActiveFilters();
-          renderGrid();
+          refreshMain();
         }
       });
     });
