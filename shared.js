@@ -45,6 +45,25 @@ function applyTheme(theme) {
   }
 }
 
+// ── Pill group ────────────────────────────────────────────────────────────────
+
+// Attaches a click handler to a pill-button group. Clicking an active button
+// deselects it (calls setVal(null)); clicking an inactive button selects it.
+function setupPillGroup(groupEl, setVal) {
+  groupEl.addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const isActive = btn.classList.contains('active');
+    groupEl.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+    if (!isActive) {
+      btn.classList.add('active');
+      setVal(btn.dataset.value);
+    } else {
+      setVal(null);
+    }
+  });
+}
+
 // ── GTD & Content Type ────────────────────────────────────────────────────────
 
 const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];

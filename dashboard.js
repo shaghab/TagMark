@@ -1018,41 +1018,10 @@
   });
 
   // Pill group interactivity in edit modal
-  $('editGtdGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editGtdGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editGtdStatus = btn.dataset.value; }
-    else editGtdStatus = null;
-  });
-
-  $('editTypeGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editTypeGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editContentType = btn.dataset.value; }
-    else editContentType = null;
-  });
-
-  $('editUrgencyGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editUrgencyGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editUrgency = btn.dataset.value; }
-    else editUrgency = null;
-  });
-
-  $('editImportanceGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editImportanceGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editImportance = btn.dataset.value; }
-    else editImportance = null;
-  });
+  setupPillGroup($('editGtdGroup'),        v => { editGtdStatus = v; });
+  setupPillGroup($('editTypeGroup'),       v => { editContentType = v; });
+  setupPillGroup($('editUrgencyGroup'),    v => { editUrgency = v; });
+  setupPillGroup($('editImportanceGroup'), v => { editImportance = v; });
 
   editForm.addEventListener('submit', async e => {
     e.preventDefault();

@@ -166,26 +166,10 @@
 
   // ── Pill groups (GTD / Type) ──────────────────────────────────────────────
 
-  function setupPillGroup(groupEl, getVal, setVal) {
-    groupEl.addEventListener('click', e => {
-      const btn = e.target.closest('.pill-btn');
-      if (!btn) return;
-      const val = btn.dataset.value;
-      const isActive = btn.classList.contains('active');
-      groupEl.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-      if (!isActive) {
-        btn.classList.add('active');
-        setVal(val);
-      } else {
-        setVal(null);
-      }
-    });
-  }
-
-  setupPillGroup(gtdGroup,       () => gtdStatus,   v => { gtdStatus = v; });
-  setupPillGroup(typeGroup,      () => contentType, v => { contentType = v; });
-  setupPillGroup(urgencyGroup,   () => urgency,     v => { urgency = v; });
-  setupPillGroup(importanceGroup,() => importance,  v => { importance = v; });
+  setupPillGroup(gtdGroup,        v => { gtdStatus = v; });
+  setupPillGroup(typeGroup,       v => { contentType = v; });
+  setupPillGroup(urgencyGroup,    v => { urgency = v; });
+  setupPillGroup(importanceGroup, v => { importance = v; });
 
   // ── Pin button ────────────────────────────────────────────────────────────
 
