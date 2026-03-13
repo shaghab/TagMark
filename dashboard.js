@@ -802,7 +802,7 @@
         emptyDesc.textContent = `No bookmarks match "${searchQuery}". Try a different search.`;
       } else if (selectedDateFilter) {
         emptyTitle.textContent = 'No bookmarks on this date';
-        emptyDesc.textContent = `No bookmarks saved in ${escHtml(formatDateFilter(selectedDateFilter))}. Try a different date.`;
+        emptyDesc.textContent = `No bookmarks saved in ${formatDateFilter(selectedDateFilter)}. Try a different date.`;
       } else if (selectedFolderFilter) {
         const fp = getFolderPath(selectedFolderFilter);
         emptyTitle.textContent = 'No bookmarks in this folder';
