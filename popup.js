@@ -3,6 +3,10 @@
 (function () {
   'use strict';
 
+  // ── Constants ─────────────────────────────────────────────────────────────
+
+  const WINDOW_CLOSE_DELAY_MS = 900; // brief pause so the toast is visible before closing
+
   // ── State ─────────────────────────────────────────────────────────────────
 
   let currentTab = null;
@@ -42,30 +46,10 @@
   const urgencyGroup   = $('urgencyGroup');
   const importanceGroup = $('importanceGroup');
 
-  // ── Theme ─────────────────────────────────────────────────────────────────
-
-  function toggleTheme() {
-    const next = getTheme() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('tagmark_theme', next);
-    applyTheme(next);
-    chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
-  }
-
   // ── Tag chips ─────────────────────────────────────────────────────────────
 
   function renderChips() {
-    tagChips.innerHTML = '';
-    selectedTags.forEach(tag => {
-      const ci = tagColorIndex(tag);
-      const chip = document.createElement('span');
-      chip.className = `tag-chip tc-${ci}`;
-      chip.innerHTML = `${escHtml(tag)}<button class="chip-remove" data-tag="${escAttr(tag)}" aria-label="Remove tag ${escAttr(tag)}">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-          <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-          <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-        </svg></button>`;
-      tagChips.appendChild(chip);
-    });
+    renderTagChips(tagChips, selectedTags);
   }
 
   tagInputWrap.addEventListener('click', e => {
@@ -79,7 +63,7 @@
   });
 
   function addTag(tag) {
-    tag = tag.trim().toLowerCase().replace(/\s+/g, '-');
+    tag = normalizeTag(tag);
     if (tag && !selectedTags.includes(tag)) {
       selectedTags.push(tag);
       renderChips();
@@ -116,7 +100,7 @@
   });
 
   tagInput.addEventListener('blur', () => {
-    setTimeout(hideDropdown, 150);
+    setTimeout(hideDropdown, BLUR_HIDE_DELAY_MS);
   });
 
   // ── Autocomplete ──────────────────────────────────────────────────────────
@@ -130,7 +114,7 @@
       t.includes(query) &&
       !selectedTags.includes(t) &&
       t !== query
-    ).slice(0, 8);
+    ).slice(0, AC_MAX_ITEMS);
     if (!acItems.length) { hideDropdown(); return; }
     acActive = -1;
     acDropdown.innerHTML = acItems.map((t, i) => {
@@ -166,26 +150,10 @@
 
   // ── Pill groups (GTD / Type) ──────────────────────────────────────────────
 
-  function setupPillGroup(groupEl, getVal, setVal) {
-    groupEl.addEventListener('click', e => {
-      const btn = e.target.closest('.pill-btn');
-      if (!btn) return;
-      const val = btn.dataset.value;
-      const isActive = btn.classList.contains('active');
-      groupEl.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-      if (!isActive) {
-        btn.classList.add('active');
-        setVal(val);
-      } else {
-        setVal(null);
-      }
-    });
-  }
-
-  setupPillGroup(gtdGroup,       () => gtdStatus,   v => { gtdStatus = v; });
-  setupPillGroup(typeGroup,      () => contentType, v => { contentType = v; });
-  setupPillGroup(urgencyGroup,   () => urgency,     v => { urgency = v; });
-  setupPillGroup(importanceGroup,() => importance,  v => { importance = v; });
+  setupPillGroup(gtdGroup,        v => { gtdStatus = v; });
+  setupPillGroup(typeGroup,       v => { contentType = v; });
+  setupPillGroup(urgencyGroup,    v => { urgency = v; });
+  setupPillGroup(importanceGroup, v => { importance = v; });
 
   // ── Pin button ────────────────────────────────────────────────────────────
 
@@ -231,7 +199,7 @@
     try {
       await chrome.runtime.sendMessage({ action: 'save-bookmark', bookmark });
       showToast(existingBookmark ? 'Bookmark updated!' : 'Bookmark saved!');
-      setTimeout(() => window.close(), 900);
+      setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error saving bookmark.');
       saveBtn.classList.remove('saving');
@@ -247,7 +215,7 @@
     try {
       await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
       showToast('Bookmark deleted.');
-      setTimeout(() => window.close(), 900);
+      setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error deleting bookmark.');
       deleteBtn.disabled = false;
@@ -261,7 +229,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
   }
 
   // ── Folder select ─────────────────────────────────────────────────────────

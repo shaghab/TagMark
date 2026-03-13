@@ -78,12 +78,7 @@
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
-  themeToggle.addEventListener('click', () => {
-    const next = getTheme() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('tagmark_theme', next);
-    applyTheme(next);
-    chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
-  });
+  themeToggle.addEventListener('click', toggleTheme);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -222,8 +217,7 @@
       item.addEventListener('click', () => {
         selectedGtdFilter = selectedGtdFilter === status ? null : status;
         renderGtdFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       gtdFilterList.appendChild(item);
     });
@@ -244,8 +238,7 @@
       item.addEventListener('click', () => {
         selectedTypeFilter = selectedTypeFilter === type ? null : type;
         renderTypeFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       typeFilterList.appendChild(item);
     });
@@ -316,8 +309,7 @@
         isYearOpen ? dateTreeOpenYears.delete(yearKey) : dateTreeOpenYears.add(yearKey);
         selectedDateFilter = isYearActive ? null : yearKey;
         renderDateTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
       dateFilterTree.appendChild(yearBtn);
 
@@ -344,8 +336,7 @@
           isMonthOpen ? dateTreeOpenMonths.delete(monthKey) : dateTreeOpenMonths.add(monthKey);
           selectedDateFilter = isMonthActive ? null : monthKey;
           renderDateTree();
-          renderActiveFilters();
-          renderGrid();
+          refreshMain();
         });
         dateFilterTree.appendChild(monthBtn);
 
@@ -367,8 +358,7 @@
             e.stopPropagation();
             selectedDateFilter = isDayActive ? null : dayKey;
             renderDateTree();
-            renderActiveFilters();
-            renderGrid();
+            refreshMain();
           });
           dateFilterTree.appendChild(dayBtn);
         });
@@ -458,8 +448,7 @@
         }
         selectedFolderFilter = isActive ? null : folder.id;
         renderFolderTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
 
       container.appendChild(row);
@@ -576,8 +565,7 @@
       selectedTagFilters.push(tag);
     }
     renderSidebar();
-    renderActiveFilters();
-    renderGrid();
+    refreshMain();
   }
 
   sidebarToggle.addEventListener('click', () => {
@@ -609,11 +597,17 @@
     renderTypeFilter();
     renderDateTree();
     renderFolderTree();
-    renderActiveFilters();
-    renderGrid();
+    refreshMain();
   });
 
   // ── Active filters row ─────────────────────────────────────────────────────
+
+  // Convenience: re-render the active-filter chips and the bookmark grid.
+  // Called after any filter state change.
+  function refreshMain() {
+    renderActiveFilters();
+    renderGrid();
+  }
 
   function renderActiveFilters() {
     const hasTagFilters  = selectedTagFilters.length > 0;
@@ -663,42 +657,38 @@
       chip.addEventListener('click', () => {
         selectedGtdFilter = null;
         renderGtdFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.type-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedTypeFilter = null;
         renderTypeFilter();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.date-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedDateFilter = null;
         renderDateTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
     activeTagChips.querySelectorAll('.folder-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         selectedFolderFilter = null;
         renderFolderTree();
-        renderActiveFilters();
-        renderGrid();
+        refreshMain();
       });
     });
   }
 
   // ── Search & sort ──────────────────────────────────────────────────────────
 
-  searchInput.addEventListener('input', () => {
+  searchInput.addEventListener('input', debounce(() => {
     searchQuery = searchInput.value.toLowerCase().trim();
     renderGrid();
-  });
+  }, SEARCH_DEBOUNCE_MS));
 
   sortSelect.addEventListener('change', () => {
     sortOrder = sortSelect.value;
@@ -839,8 +829,7 @@
         if (!selectedTagFilters.includes(chip.dataset.tag)) {
           selectedTagFilters.push(chip.dataset.tag);
           renderSidebar();
-          renderActiveFilters();
-          renderGrid();
+          refreshMain();
         }
       });
     });
@@ -1018,41 +1007,10 @@
   });
 
   // Pill group interactivity in edit modal
-  $('editGtdGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editGtdGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editGtdStatus = btn.dataset.value; }
-    else editGtdStatus = null;
-  });
-
-  $('editTypeGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editTypeGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editContentType = btn.dataset.value; }
-    else editContentType = null;
-  });
-
-  $('editUrgencyGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editUrgencyGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editUrgency = btn.dataset.value; }
-    else editUrgency = null;
-  });
-
-  $('editImportanceGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.pill-btn');
-    if (!btn) return;
-    const isActive = btn.classList.contains('active');
-    $('editImportanceGroup').querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
-    if (!isActive) { btn.classList.add('active'); editImportance = btn.dataset.value; }
-    else editImportance = null;
-  });
+  setupPillGroup($('editGtdGroup'),        v => { editGtdStatus = v; });
+  setupPillGroup($('editTypeGroup'),       v => { editContentType = v; });
+  setupPillGroup($('editUrgencyGroup'),    v => { editUrgency = v; });
+  setupPillGroup($('editImportanceGroup'), v => { editImportance = v; });
 
   editForm.addEventListener('submit', async e => {
     e.preventDefault();
@@ -1086,16 +1044,7 @@
   // ── Edit tag chips ─────────────────────────────────────────────────────────
 
   function renderEditChips() {
-    editTagChips.innerHTML = '';
-    editTags.forEach(tag => {
-      const ci = tagColorIndex(tag);
-      const chip = document.createElement('span');
-      chip.className = `tag-chip tc-${ci}`;
-      chip.innerHTML = `${escHtml(tag)}<button class="chip-remove" data-tag="${escAttr(tag)}" aria-label="Remove tag ${escAttr(tag)}">
-        <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
-      </button>`;
-      editTagChips.appendChild(chip);
-    });
+    renderTagChips(editTagChips, editTags);
   }
 
   editTagInputWrap.addEventListener('click', e => {
@@ -1132,11 +1081,11 @@
   });
 
   editTagInput.addEventListener('blur', () => {
-    setTimeout(hideEditDropdown, 150);
+    setTimeout(hideEditDropdown, BLUR_HIDE_DELAY_MS);
   });
 
   function addEditTag(tag) {
-    tag = tag.trim().toLowerCase().replace(/\s+/g, '-');
+    tag = normalizeTag(tag);
     if (tag && !editTags.includes(tag)) {
       editTags.push(tag);
       renderEditChips();
@@ -1147,7 +1096,7 @@
 
   function showEditAutocomplete(query) {
     if (!query) { hideEditDropdown(); return; }
-    editAcItems = allTags.filter(t => t.includes(query) && !editTags.includes(t)).slice(0, 8);
+    editAcItems = allTags.filter(t => t.includes(query) && !editTags.includes(t)).slice(0, AC_MAX_ITEMS);
     if (!editAcItems.length) { hideEditDropdown(); return; }
     editAcActive = -1;
     editAcDropdown.innerHTML = editAcItems.map((t, i) => {
@@ -1245,7 +1194,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
   }
 
   // ── Boot ───────────────────────────────────────────────────────────────────

@@ -253,7 +253,6 @@ const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived'
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
-const PRIORITY_SCORE  = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
 
 // Allow only http/https favicons and inline data images (A03 – Injection).
 // javascript: and data:text/html URIs must never reach an img.src attribute.
