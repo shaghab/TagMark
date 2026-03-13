@@ -41,10 +41,5 @@
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data: https:;"
   },
 
-  "web_accessible_resources": [
-    {
-      "resources": ["icons/*"],
-      "matches": ["chrome-extension://*/*"]
-    }
-  ]
+  "web_accessible_resources": []
 }
