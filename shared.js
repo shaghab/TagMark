@@ -50,6 +50,12 @@ function applyTheme(theme) {
 const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
+// ── Tag normalization ─────────────────────────────────────────────────────────
+
+function normalizeTag(tag) {
+  return String(tag).trim().toLowerCase().replace(/\s+/g, '-');
+}
+
 // ── URL formatting ───────────────────────────────────────────────────────────
 
 function formatUrl(url) {

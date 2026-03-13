@@ -79,7 +79,7 @@
   });
 
   function addTag(tag) {
-    tag = tag.trim().toLowerCase().replace(/\s+/g, '-');
+    tag = normalizeTag(tag);
     if (tag && !selectedTags.includes(tag)) {
       selectedTags.push(tag);
       renderChips();
