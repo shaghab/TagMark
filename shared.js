@@ -69,6 +69,12 @@ function setupPillGroup(groupEl, setVal) {
 const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
+// ── UI timing & limits ────────────────────────────────────────────────────────
+
+const TOAST_DURATION_MS  = 2800; // how long toast notifications stay visible
+const BLUR_HIDE_DELAY_MS = 150;  // delay before hiding autocomplete on input blur
+const AC_MAX_ITEMS       = 8;    // max autocomplete suggestions shown at once
+
 // ── Tag normalization ─────────────────────────────────────────────────────────
 
 function normalizeTag(tag) {

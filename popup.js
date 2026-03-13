@@ -3,6 +3,10 @@
 (function () {
   'use strict';
 
+  // ── Constants ─────────────────────────────────────────────────────────────
+
+  const WINDOW_CLOSE_DELAY_MS = 900; // brief pause so the toast is visible before closing
+
   // ── State ─────────────────────────────────────────────────────────────────
 
   let currentTab = null;
@@ -116,7 +120,7 @@
   });
 
   tagInput.addEventListener('blur', () => {
-    setTimeout(hideDropdown, 150);
+    setTimeout(hideDropdown, BLUR_HIDE_DELAY_MS);
   });
 
   // ── Autocomplete ──────────────────────────────────────────────────────────
@@ -130,7 +134,7 @@
       t.includes(query) &&
       !selectedTags.includes(t) &&
       t !== query
-    ).slice(0, 8);
+    ).slice(0, AC_MAX_ITEMS);
     if (!acItems.length) { hideDropdown(); return; }
     acActive = -1;
     acDropdown.innerHTML = acItems.map((t, i) => {
@@ -215,7 +219,7 @@
     try {
       await chrome.runtime.sendMessage({ action: 'save-bookmark', bookmark });
       showToast(existingBookmark ? 'Bookmark updated!' : 'Bookmark saved!');
-      setTimeout(() => window.close(), 900);
+      setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error saving bookmark.');
       saveBtn.classList.remove('saving');
@@ -231,7 +235,7 @@
     try {
       await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
       showToast('Bookmark deleted.');
-      setTimeout(() => window.close(), 900);
+      setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error deleting bookmark.');
       deleteBtn.disabled = false;
@@ -245,7 +249,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
   }
 
   // ── Folder select ─────────────────────────────────────────────────────────

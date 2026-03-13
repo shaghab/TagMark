@@ -1101,7 +1101,7 @@
   });
 
   editTagInput.addEventListener('blur', () => {
-    setTimeout(hideEditDropdown, 150);
+    setTimeout(hideEditDropdown, BLUR_HIDE_DELAY_MS);
   });
 
   function addEditTag(tag) {
@@ -1116,7 +1116,7 @@
 
   function showEditAutocomplete(query) {
     if (!query) { hideEditDropdown(); return; }
-    editAcItems = allTags.filter(t => t.includes(query) && !editTags.includes(t)).slice(0, 8);
+    editAcItems = allTags.filter(t => t.includes(query) && !editTags.includes(t)).slice(0, AC_MAX_ITEMS);
     if (!editAcItems.length) { hideEditDropdown(); return; }
     editAcActive = -1;
     editAcDropdown.innerHTML = editAcItems.map((t, i) => {
@@ -1214,7 +1214,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
   }
 
   // ── Boot ───────────────────────────────────────────────────────────────────
