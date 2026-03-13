@@ -46,15 +46,6 @@
   const urgencyGroup   = $('urgencyGroup');
   const importanceGroup = $('importanceGroup');
 
-  // ── Theme ─────────────────────────────────────────────────────────────────
-
-  function toggleTheme() {
-    const next = getTheme() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('tagmark_theme', next);
-    applyTheme(next);
-    chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
-  }
-
   // ── Tag chips ─────────────────────────────────────────────────────────────
 
   function renderChips() {

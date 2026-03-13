@@ -78,12 +78,7 @@
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
-  themeToggle.addEventListener('click', () => {
-    const next = getTheme() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('tagmark_theme', next);
-    applyTheme(next);
-    chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
-  });
+  themeToggle.addEventListener('click', toggleTheme);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 

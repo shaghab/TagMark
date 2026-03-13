@@ -45,6 +45,13 @@ function applyTheme(theme) {
   }
 }
 
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('tagmark_theme', next);
+  applyTheme(next);
+  chrome.runtime.sendMessage({ action: 'save-settings', settings: { theme: next } });
+}
+
 // ── Pill group ────────────────────────────────────────────────────────────────
 
 // Attaches a click handler to a pill-button group. Clicking an active button
