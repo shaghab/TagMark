@@ -15,7 +15,7 @@ const path = require('path');
 const sharedCode = fs.readFileSync(path.resolve(__dirname, '../shared.js'), 'utf8');
 
 // Provide only the globals the pure functions need (no DOM, no localStorage).
-const ctx = vm.createContext({ URL, String, Math });
+const ctx = vm.createContext({ URL, String, Math, setTimeout, clearTimeout });
 vm.runInContext(sharedCode, ctx);
 
 const { escHtml, escAttr, tagColorIndex, formatUrl } = ctx;
@@ -157,5 +157,98 @@ describe('formatUrl', () => {
   test('returns a string for file: URLs without throwing', () => {
     const result = formatUrl('file:///home/user/doc.html');
     expect(typeof result).toBe('string');
+  });
+});
+
+// ── normalizeTag ──────────────────────────────────────────────────────────────
+
+const { normalizeTag } = ctx;
+
+describe('normalizeTag', () => {
+  test('lowercases the tag', () => {
+    expect(normalizeTag('JAVASCRIPT')).toBe('javascript');
+  });
+
+  test('replaces spaces with hyphens', () => {
+    expect(normalizeTag('web dev')).toBe('web-dev');
+  });
+
+  test('collapses multiple spaces into a single hyphen', () => {
+    expect(normalizeTag('a  b   c')).toBe('a-b-c');
+  });
+
+  test('trims leading and trailing whitespace', () => {
+    expect(normalizeTag('  react  ')).toBe('react');
+  });
+
+  test('lowercases and replaces spaces together', () => {
+    expect(normalizeTag('  Web Dev  ')).toBe('web-dev');
+  });
+
+  test('passes through an already-normalized tag unchanged', () => {
+    expect(normalizeTag('web-dev')).toBe('web-dev');
+  });
+
+  test('coerces numbers to string', () => {
+    expect(normalizeTag(42)).toBe('42');
+  });
+
+  test('returns an empty string for an empty input', () => {
+    expect(normalizeTag('')).toBe('');
+  });
+});
+
+// ── debounce ──────────────────────────────────────────────────────────────────
+
+const { debounce } = ctx;
+
+describe('debounce', () => {
+  // Use real timers: the vm context captures the real setTimeout at creation
+  // time, so Jest fake timers do not control it.
+
+  test('does not call the function immediately (synchronously)', () => {
+    const fn = jest.fn();
+    const debounced = debounce(fn, 20);
+    debounced();
+    // No timer advance — fn must not have been called yet
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  test('calls the function after the delay elapses', async () => {
+    const fn = jest.fn();
+    const debounced = debounce(fn, 20);
+    debounced();
+    await new Promise(r => setTimeout(r, 40));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('resets the timer on repeated calls — only fires once', async () => {
+    const fn = jest.fn();
+    const debounced = debounce(fn, 50);
+    debounced();
+    await new Promise(r => setTimeout(r, 20));
+    debounced();
+    await new Promise(r => setTimeout(r, 20));
+    debounced();
+    await new Promise(r => setTimeout(r, 70));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('passes arguments to the wrapped function', async () => {
+    const fn = jest.fn();
+    const debounced = debounce(fn, 20);
+    debounced('hello', 42);
+    await new Promise(r => setTimeout(r, 40));
+    expect(fn).toHaveBeenCalledWith('hello', 42);
+  });
+
+  test('can fire multiple times when separated by the full delay', async () => {
+    const fn = jest.fn();
+    const debounced = debounce(fn, 20);
+    debounced();
+    await new Promise(r => setTimeout(r, 40));
+    debounced();
+    await new Promise(r => setTimeout(r, 40));
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 });
