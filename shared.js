@@ -119,6 +119,22 @@ function normalizeTag(tag) {
   return String(tag).trim().toLowerCase().replace(/\s+/g, '-');
 }
 
+// ── Favicon URL sanitization ─────────────────────────────────────────────────
+
+// Allow only http/https favicons and inline data images (A03 – Injection).
+// javascript: and data:text/html URIs must never reach an img.src attribute.
+function sanitizeFavIconUrl(raw) {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim().slice(0, 2048);
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
+  } catch {
+    return '';
+  }
+}
+
 // ── URL formatting ───────────────────────────────────────────────────────────
 
 function formatUrl(url) {

@@ -279,8 +279,9 @@
     pageTitle.textContent = tab.title || tab.url;
     pageUrl.textContent = formatUrl(tab.url);
 
-    if (tab.favIconUrl) {
-      pageFavicon.src = tab.favIconUrl;
+    const safeFavIcon = sanitizeFavIconUrl(tab.favIconUrl || '');
+    if (safeFavIcon) {
+      pageFavicon.src = safeFavIcon;
       pageFavicon.style.display = '';
       faviconFall.style.display = 'none';
       pageFavicon.onerror = () => {
