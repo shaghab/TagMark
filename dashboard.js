@@ -211,7 +211,7 @@
     GTD_STATUSES.forEach(status => {
       const count = counts[status] || 0;
       const item = document.createElement('button');
-      item.className = 'status-filter-item gtd-item gtd-' + status + (selectedGtdFilter === status ? ' active' : '');
+      item.className = 'status-filter-item gtd-item ' + (GTD_CSS_CLASS[status] || '') + (selectedGtdFilter === status ? ' active' : '');
       item.dataset.value = status;
       item.innerHTML = `<span class="status-dot"></span>${escHtml(status.charAt(0).toUpperCase() + status.slice(1))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
@@ -232,7 +232,7 @@
     CONTENT_TYPES.forEach(type => {
       const count = counts[type] || 0;
       const item = document.createElement('button');
-      item.className = 'status-filter-item type-item type-' + type + (selectedTypeFilter === type ? ' active' : '');
+      item.className = 'status-filter-item type-item ' + (TYPE_CSS_CLASS[type] || '') + (selectedTypeFilter === type ? ' active' : '');
       item.dataset.value = type;
       item.innerHTML = `<span class="status-dot"></span>${escHtml(type.charAt(0).toUpperCase() + type.slice(1))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
@@ -641,11 +641,11 @@
       : '';
 
     const gtdChipHtml = hasGtdFilter
-      ? `<span class="gtd-chip active-filter-chip gtd-${escAttr(selectedGtdFilter)}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(selectedGtdFilter.charAt(0).toUpperCase() + selectedGtdFilter.slice(1))} ×</span>`
+      ? `<span class="gtd-chip active-filter-chip ${GTD_CSS_CLASS[selectedGtdFilter] || ''}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(selectedGtdFilter.charAt(0).toUpperCase() + selectedGtdFilter.slice(1))} ×</span>`
       : '';
 
     const typeChipHtml = hasTypeFilter
-      ? `<span class="type-chip active-filter-chip type-${escAttr(selectedTypeFilter)}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(selectedTypeFilter.charAt(0).toUpperCase() + selectedTypeFilter.slice(1))} ×</span>`
+      ? `<span class="type-chip active-filter-chip ${TYPE_CSS_CLASS[selectedTypeFilter] || ''}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(selectedTypeFilter.charAt(0).toUpperCase() + selectedTypeFilter.slice(1))} ×</span>`
       : '';
 
     activeTagChips.innerHTML = tagChipsHtml + gtdChipHtml + typeChipHtml + dateChipHtml + folderChipHtml;

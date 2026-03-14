@@ -76,6 +76,11 @@ function setupPillGroup(groupEl, setVal) {
 const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
+// Allowlist maps for CSS class construction (A03 – CSS Injection defence).
+// Only values from the known-safe arrays may appear as CSS class suffixes.
+const GTD_CSS_CLASS  = Object.fromEntries(GTD_STATUSES.map(s  => [s,  'gtd-'  + s]));
+const TYPE_CSS_CLASS = Object.fromEntries(CONTENT_TYPES.map(t => [t, 'type-' + t]));
+
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
 const TOAST_DURATION_MS   = 2800; // how long toast notifications stay visible
