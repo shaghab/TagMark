@@ -9,7 +9,7 @@
  * calls are intercepted by the in-memory mock provided by createBgContext().
  */
 
-const { createBgContext } = require('./helpers/bg-context');
+const { createBgContext, createStorageMock } = require('./helpers/bg-context');
 
 // ── isValidUrl ────────────────────────────────────────────────────────────────
 
@@ -185,6 +185,75 @@ describe('sanitizeBookmark', () => {
     expect(sanitizeBookmark({ ...VALID_RAW, folderId: '' }).folderId).toBeNull();
     expect(sanitizeBookmark({ ...VALID_RAW, folderId: null }).folderId).toBeNull();
   });
+
+  test('preserves a valid gtdStatus', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, gtdStatus: 'next' });
+    expect(b.gtdStatus).toBe('next');
+  });
+
+  test('sets gtdStatus to null for an unrecognised value', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, gtdStatus: 'unknown-status' });
+    expect(b.gtdStatus).toBeNull();
+  });
+
+  test('sets gtdStatus to null when not provided', () => {
+    const b = sanitizeBookmark(VALID_RAW);
+    expect(b.gtdStatus).toBeNull();
+  });
+
+  test('preserves a valid contentType', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, contentType: 'read' });
+    expect(b.contentType).toBe('read');
+  });
+
+  test('sets contentType to null for an unrecognised value', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, contentType: 'invalid' });
+    expect(b.contentType).toBeNull();
+  });
+
+  test('preserves a valid urgency', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, urgency: 'high' });
+    expect(b.urgency).toBe('high');
+  });
+
+  test('sets urgency to null for an unrecognised value', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, urgency: 'extreme' });
+    expect(b.urgency).toBeNull();
+  });
+
+  test('preserves a valid importance', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, importance: 'critical' });
+    expect(b.importance).toBe('critical');
+  });
+
+  test('sets importance to null for an unrecognised value', () => {
+    const b = sanitizeBookmark({ ...VALID_RAW, importance: 'super-important' });
+    expect(b.importance).toBeNull();
+  });
+
+  test('all valid gtdStatus values are accepted', () => {
+    const statuses = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
+    for (const gtdStatus of statuses) {
+      const b = sanitizeBookmark({ ...VALID_RAW, gtdStatus });
+      expect(b.gtdStatus).toBe(gtdStatus);
+    }
+  });
+
+  test('all valid contentType values are accepted', () => {
+    const types = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+    for (const contentType of types) {
+      const b = sanitizeBookmark({ ...VALID_RAW, contentType });
+      expect(b.contentType).toBe(contentType);
+    }
+  });
+
+  test('all valid priority level values are accepted for urgency and importance', () => {
+    const levels = ['critical', 'high', 'medium', 'low', 'none'];
+    for (const level of levels) {
+      expect(sanitizeBookmark({ ...VALID_RAW, urgency: level }).urgency).toBe(level);
+      expect(sanitizeBookmark({ ...VALID_RAW, importance: level }).importance).toBe(level);
+    }
+  });
 });
 
 // ── generateId ────────────────────────────────────────────────────────────────
@@ -297,6 +366,44 @@ describe('handleMessage: save-bookmark', () => {
     const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, pinned: 1 } });
     expect(result.pinned).toBe(true);
   });
+
+  test('saves a valid gtdStatus', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, gtdStatus: 'next' } });
+    expect(result.gtdStatus).toBe('next');
+  });
+
+  test('stores null for an unrecognised gtdStatus', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, gtdStatus: 'bogus' } });
+    expect(result.gtdStatus).toBeNull();
+  });
+
+  test('saves a valid contentType', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, contentType: 'watch' } });
+    expect(result.contentType).toBe('watch');
+  });
+
+  test('stores null for an unrecognised contentType', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, contentType: 'invalid' } });
+    expect(result.contentType).toBeNull();
+  });
+
+  test('saves valid urgency and importance', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, urgency: 'high', importance: 'critical' } });
+    expect(result.urgency).toBe('high');
+    expect(result.importance).toBe('critical');
+  });
+
+  test('stores null for unrecognised urgency and importance', async () => {
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, urgency: 'extreme', importance: 'meh' } });
+    expect(result.urgency).toBeNull();
+    expect(result.importance).toBeNull();
+  });
+
+  test('preserves existing gtdStatus when URL is a duplicate and new value is invalid', async () => {
+    await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, gtdStatus: 'later' } });
+    const result = await sendMessage({ action: 'save-bookmark', bookmark: { ...BM, gtdStatus: 'bogus' } });
+    expect(result.gtdStatus).toBe('later');
+  });
 });
 
 // ── handleMessage: delete-bookmark ───────────────────────────────────────────
@@ -387,6 +494,66 @@ describe('handleMessage: update-bookmark', () => {
     await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, title: 'Updated' } });
     const [updated] = await sendMessage({ action: 'get-bookmarks' });
     expect(updated.updatedAt).toBeGreaterThan(saved.updatedAt);
+  });
+
+  test('can update folderId to a non-empty string', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, folderId: 'folder-abc' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.folderId).toBe('folder-abc');
+  });
+
+  test('can clear folderId by setting it to an empty string', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, folderId: '' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.folderId).toBeNull();
+  });
+
+  test('can update gtdStatus to a valid value', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, gtdStatus: 'someday' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.gtdStatus).toBe('someday');
+  });
+
+  test('sets gtdStatus to null when updated with an invalid value', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, gtdStatus: 'bogus' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.gtdStatus).toBeNull();
+  });
+
+  test('can update contentType to a valid value', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, contentType: 'learn' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.contentType).toBe('learn');
+  });
+
+  test('can update urgency and importance', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, urgency: 'medium', importance: 'low' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.urgency).toBe('medium');
+    expect(updated.importance).toBe('low');
+  });
+
+  test('preserves existing gtdStatus when update does not include gtdStatus field', async () => {
+    const saved = await sendMessage({ action: 'save-bookmark', bookmark: {
+      url: 'https://example.com', title: 'Old Title', tags: ['old'], notes: 'old note',
+      pinned: false, favIconUrl: '', gtdStatus: 'waiting',
+    }});
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, title: 'New Title' } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.gtdStatus).toBe('waiting');
+  });
+
+  test('can set pinned to true via update', async () => {
+    const saved = await saveBm();
+    await sendMessage({ action: 'update-bookmark', bookmark: { ...saved, pinned: true } });
+    const [updated] = await sendMessage({ action: 'get-bookmarks' });
+    expect(updated.pinned).toBe(true);
   });
 });
 
@@ -665,6 +832,69 @@ describe('handleMessage: unknown action', () => {
   });
 });
 
+// ── notifyDashboard ───────────────────────────────────────────────────────────
+
+describe('notifyDashboard', () => {
+  test('invokes the original tabs.sendMessage for a matching dashboard tab (no error thrown)', async () => {
+    // This test exercises bg-context.js line 92 (the default tabs.sendMessage stub).
+    // We override only tabs.query; the original sendMessage from the mock is called.
+    const { chrome, sendMessage } = createBgContext();
+    const dashboardUrl = chrome.runtime.getURL('dashboard.html');
+
+    chrome.tabs.query = (_, cb) => cb([{ id: 99, url: dashboardUrl }]);
+    // tabs.sendMessage is NOT overridden — the original mock (line 92) is used.
+
+    const saved = await sendMessage({ action: 'save-bookmark', bookmark: {
+      url: 'https://notify-orig.com', title: 'Notify Orig', tags: [], notes: '', pinned: false, favIconUrl: '',
+    }});
+    // delete-bookmark always calls notifyDashboard
+    const result = await sendMessage({ action: 'delete-bookmark', id: saved.id });
+    expect(result).toEqual({ success: true });
+  });
+
+  test('sends a message to an open dashboard tab', async () => {
+    const { chrome, sendMessage } = createBgContext();
+    const sentMessages = [];
+    const dashboardUrl = chrome.runtime.getURL('dashboard.html');
+
+    chrome.tabs.query = (_, cb) => cb([{ id: 99, url: dashboardUrl }]);
+    chrome.tabs.sendMessage = (tabId, msg) => {
+      sentMessages.push({ tabId, msg });
+      return Promise.resolve();
+    };
+
+    const saved = await sendMessage({ action: 'save-bookmark', bookmark: {
+      url: 'https://notify-test.com', title: 'Notify Test', tags: [], notes: '', pinned: false, favIconUrl: '',
+    }});
+    await sendMessage({ action: 'delete-bookmark', id: saved.id });
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    expect(sentMessages[0].tabId).toBe(99);
+    expect(sentMessages[0].msg.action).toBe('bookmark-deleted');
+  });
+
+  test('does not send to tabs whose URL does not start with the dashboard URL', async () => {
+    const { chrome, sendMessage } = createBgContext();
+    const sentMessages = [];
+
+    chrome.tabs.query = (_, cb) => cb([
+      { id: 1, url: 'https://example.com/dashboard.html' }, // not this extension's URL
+      { id: 2, url: null },                                  // tab with no URL
+    ]);
+    chrome.tabs.sendMessage = (tabId, msg) => {
+      sentMessages.push({ tabId, msg });
+      return Promise.resolve();
+    };
+
+    const saved = await sendMessage({ action: 'save-bookmark', bookmark: {
+      url: 'https://no-notify.com', title: 'No Notify', tags: [], notes: '', pinned: false, favIconUrl: '',
+    }});
+    await sendMessage({ action: 'delete-bookmark', id: saved.id });
+
+    expect(sentMessages.length).toBe(0);
+  });
+});
+
 // ── Storage sharding ─────────────────────────────────────────────────────────
 
 describe('storage sharding', () => {
@@ -742,6 +972,62 @@ describe('migrateLegacyStorage', () => {
     const bookmarks = await sendMessage({ action: 'get-bookmarks' });
     expect(bookmarks).toEqual([]);
     expect(Array.isArray(storage._data['tagmark_index'])).toBe(true);
+  });
+});
+
+// ── createStorageMock: object-form get ────────────────────────────────────────
+
+describe('createStorageMock: object-form get (defaults)', () => {
+  let storage;
+  beforeEach(() => { storage = createStorageMock(); });
+
+  test('returns the provided default for a key not in storage', done => {
+    storage.get({ missingKey: 'default-value' }, result => {
+      expect(result.missingKey).toBe('default-value');
+      done();
+    });
+  });
+
+  test('returns the stored value (not the default) when the key exists', done => {
+    storage._data['existingKey'] = 'stored-value';
+    storage.get({ existingKey: 'default-value' }, result => {
+      expect(result.existingKey).toBe('stored-value');
+      done();
+    });
+  });
+
+  test('handles multiple keys — some stored, some using defaults', done => {
+    storage._data['keyA'] = 'actual-a';
+    storage.get({ keyA: 'default-a', keyB: 'default-b' }, result => {
+      expect(result.keyA).toBe('actual-a');
+      expect(result.keyB).toBe('default-b');
+      done();
+    });
+  });
+
+  test('string-form get returns only the matching key', done => {
+    storage._data['theKey'] = 'theValue';
+    storage.get('theKey', result => {
+      expect(result.theKey).toBe('theValue');
+      done();
+    });
+  });
+
+  test('string-form get returns empty result for a missing key', done => {
+    storage.get('noSuchKey', result => {
+      expect(Object.keys(result).length).toBe(0);
+      done();
+    });
+  });
+
+  test('remove deletes a key and subsequent get returns empty', done => {
+    storage._data['toRemove'] = 'value';
+    storage.remove('toRemove', () => {
+      storage.get(['toRemove'], result => {
+        expect(result.toRemove).toBeUndefined();
+        done();
+      });
+    });
   });
 });
 
