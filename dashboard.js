@@ -1152,6 +1152,7 @@
   importBtn.addEventListener('click', () => importFileInput.click());
 
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+  const MAX_IMPORT_COUNT = 10000;            // max bookmark entries per import (CWE-400)
 
   importFileInput.addEventListener('change', async e => {
     const file = e.target.files[0];
@@ -1173,6 +1174,12 @@
         ? data
         : (data && typeof data === 'object' && Array.isArray(data.bookmarks) ? data.bookmarks : null);
       if (!bookmarks || !bookmarks.length) { showToast('No bookmarks found in file.'); return; }
+      // Cap the number of entries to prevent resource exhaustion (CWE-400).
+      if (bookmarks.length > MAX_IMPORT_COUNT) {
+        showToast(`Import file too large (max ${MAX_IMPORT_COUNT} bookmarks).`);
+        importFileInput.value = '';
+        return;
+      }
       const result = await chrome.runtime.sendMessage({ action: 'import-bookmarks', bookmarks });
       showToast(`Imported ${result.count} bookmarks.`);
       await loadBookmarks();
