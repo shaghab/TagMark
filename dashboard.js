@@ -934,7 +934,7 @@
   // ── Delete ─────────────────────────────────────────────────────────────────
 
   async function deleteBookmark(id) {
-    const card = bookmarkGrid.querySelector(`[data-id="${id}"]`);
+    const card = bookmarkGrid.querySelector(`[data-id="${CSS.escape(id)}"]`);
     if (card) {
       card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
       card.style.opacity = '0';
@@ -1152,6 +1152,7 @@
   importBtn.addEventListener('click', () => importFileInput.click());
 
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+  const MAX_IMPORT_COUNT = 10000;            // max bookmark entries per import (CWE-400)
 
   importFileInput.addEventListener('change', async e => {
     const file = e.target.files[0];
@@ -1173,6 +1174,12 @@
         ? data
         : (data && typeof data === 'object' && Array.isArray(data.bookmarks) ? data.bookmarks : null);
       if (!bookmarks || !bookmarks.length) { showToast('No bookmarks found in file.'); return; }
+      // Cap the number of entries to prevent resource exhaustion (CWE-400).
+      if (bookmarks.length > MAX_IMPORT_COUNT) {
+        showToast(`Import file too large (max ${MAX_IMPORT_COUNT} bookmarks).`);
+        importFileInput.value = '';
+        return;
+      }
       const result = await chrome.runtime.sendMessage({ action: 'import-bookmarks', bookmarks });
       showToast(`Imported ${result.count} bookmarks.`);
       await loadBookmarks();
