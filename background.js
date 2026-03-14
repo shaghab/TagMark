@@ -224,7 +224,10 @@ async function saveBookmark(bookmark) {
 }
 
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  // Use CSPRNG instead of Math.random() to prevent ID prediction (A02).
+  const buf = new Uint32Array(2);
+  crypto.getRandomValues(buf);
+  return Date.now().toString(36) + buf[0].toString(36) + buf[1].toString(36);
 }
 
 function notifyDashboard(action) {
@@ -417,7 +420,11 @@ async function handleMessage(message) {
 
     case 'create-folder': {
       const folders = await getFolders();
-      const name = typeof message.name === 'string' ? message.name.trim().slice(0, MAX_FOLDER_NAME_LEN) : '';
+      // Strip HTML metacharacters at storage time so folder names can never
+      // carry injection payloads regardless of how they are rendered (A03).
+      const name = typeof message.name === 'string'
+        ? message.name.trim().replace(/[<>"'`]/g, '').slice(0, MAX_FOLDER_NAME_LEN)
+        : '';
       if (!name) return { error: 'Invalid folder name' };
       const parentId = typeof message.parentId === 'string' && message.parentId ? message.parentId : null;
       if (parentId && !folders.find(f => f.id === parentId)) return { error: 'Parent folder not found' };
@@ -432,7 +439,9 @@ async function handleMessage(message) {
       const folders = await getFolders();
       const idx = folders.findIndex(f => f.id === message.id);
       if (idx < 0) return { error: 'Folder not found' };
-      const name = typeof message.name === 'string' ? message.name.trim().slice(0, MAX_FOLDER_NAME_LEN) : '';
+      const name = typeof message.name === 'string'
+        ? message.name.trim().replace(/[<>"'`]/g, '').slice(0, MAX_FOLDER_NAME_LEN)
+        : '';
       if (!name) return { error: 'Invalid folder name' };
       folders[idx] = { ...folders[idx], name };
       await saveFolders(folders);

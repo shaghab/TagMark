@@ -73,8 +73,14 @@ function setupPillGroup(groupEl, setVal) {
 
 // ── GTD & Content Type ────────────────────────────────────────────────────────
 
-const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
-const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
+const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
+
+// Allowlist maps for CSS class construction (A03 – CSS Injection defence).
+// Only values from the known-safe arrays may appear as CSS class suffixes.
+const GTD_CSS_CLASS  = Object.fromEntries(GTD_STATUSES.map(s  => [s,  'gtd-'  + s]));
+const TYPE_CSS_CLASS = Object.fromEntries(CONTENT_TYPES.map(t => [t, 'type-' + t]));
 
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
@@ -117,6 +123,22 @@ function renderTagChips(container, tags) {
 
 function normalizeTag(tag) {
   return String(tag).trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+// ── Favicon URL sanitization ─────────────────────────────────────────────────
+
+// Allow only http/https favicons and inline data images (A03 – Injection).
+// javascript: and data:text/html URIs must never reach an img.src attribute.
+function sanitizeFavIconUrl(raw) {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim().slice(0, 2048);
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
+  } catch {
+    return '';
+  }
 }
 
 // ── URL formatting ───────────────────────────────────────────────────────────

@@ -279,8 +279,9 @@
     pageTitle.textContent = tab.title || tab.url;
     pageUrl.textContent = formatUrl(tab.url);
 
-    if (tab.favIconUrl) {
-      pageFavicon.src = tab.favIconUrl;
+    const safeFavIcon = sanitizeFavIconUrl(tab.favIconUrl || '');
+    if (safeFavIcon) {
+      pageFavicon.src = safeFavIcon;
       pageFavicon.style.display = '';
       faviconFall.style.display = 'none';
       pageFavicon.onerror = () => {
@@ -307,19 +308,19 @@
       if (existingBookmark.folderId) {
         $('folderSelect').value = existingBookmark.folderId;
       }
-      if (existingBookmark.gtdStatus) {
+      if (GTD_STATUSES.includes(existingBookmark.gtdStatus)) {
         gtdStatus = existingBookmark.gtdStatus;
         gtdGroup.querySelector(`[data-value="${existingBookmark.gtdStatus}"]`)?.classList.add('active');
       }
-      if (existingBookmark.contentType) {
+      if (CONTENT_TYPES.includes(existingBookmark.contentType)) {
         contentType = existingBookmark.contentType;
         typeGroup.querySelector(`[data-value="${existingBookmark.contentType}"]`)?.classList.add('active');
       }
-      if (existingBookmark.urgency) {
+      if (PRIORITY_LEVELS.includes(existingBookmark.urgency)) {
         urgency = existingBookmark.urgency;
         urgencyGroup.querySelector(`[data-value="${existingBookmark.urgency}"]`)?.classList.add('active');
       }
-      if (existingBookmark.importance) {
+      if (PRIORITY_LEVELS.includes(existingBookmark.importance)) {
         importance = existingBookmark.importance;
         importanceGroup.querySelector(`[data-value="${existingBookmark.importance}"]`)?.classList.add('active');
       }
