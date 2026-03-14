@@ -934,7 +934,7 @@
   // ── Delete ─────────────────────────────────────────────────────────────────
 
   async function deleteBookmark(id) {
-    const card = bookmarkGrid.querySelector(`[data-id="${id}"]`);
+    const card = bookmarkGrid.querySelector(`[data-id="${CSS.escape(id)}"]`);
     if (card) {
       card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
       card.style.opacity = '0';
