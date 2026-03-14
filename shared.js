@@ -73,8 +73,9 @@ function setupPillGroup(groupEl, setVal) {
 
 // ── GTD & Content Type ────────────────────────────────────────────────────────
 
-const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
-const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
+const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
 // Allowlist maps for CSS class construction (A03 – CSS Injection defence).
 // Only values from the known-safe arrays may appear as CSS class suffixes.
