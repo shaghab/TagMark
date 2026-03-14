@@ -224,7 +224,10 @@ async function saveBookmark(bookmark) {
 }
 
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  // Use CSPRNG instead of Math.random() to prevent ID prediction (A02).
+  const buf = new Uint32Array(2);
+  crypto.getRandomValues(buf);
+  return Date.now().toString(36) + buf[0].toString(36) + buf[1].toString(36);
 }
 
 function notifyDashboard(action) {
