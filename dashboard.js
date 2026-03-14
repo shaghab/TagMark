@@ -1167,8 +1167,12 @@
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const bookmarks = Array.isArray(data) ? data : data.bookmarks || [];
-      if (!bookmarks.length) { showToast('No bookmarks found in file.'); return; }
+      // Require a top-level array or an object with an array .bookmarks field.
+      // Reject any other structure before touching the background (A08).
+      const bookmarks = Array.isArray(data)
+        ? data
+        : (data && typeof data === 'object' && Array.isArray(data.bookmarks) ? data.bookmarks : null);
+      if (!bookmarks || !bookmarks.length) { showToast('No bookmarks found in file.'); return; }
       const result = await chrome.runtime.sendMessage({ action: 'import-bookmarks', bookmarks });
       showToast(`Imported ${result.count} bookmarks.`);
       await loadBookmarks();
