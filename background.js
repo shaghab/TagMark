@@ -221,17 +221,12 @@ async function saveBookmark(bookmark) {
 
   // Enforce field-length limits so a tab with an unusually long title or
   // a bulk-programmatic caller cannot bloat chrome.storage.sync (A08).
-  const rawTags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const newBookmark = {
     id: existingIndex >= 0 ? bookmarks[existingIndex].id : generateId(),
     url: bookmark.url.slice(0, MAX_URL_LEN),
     title: (typeof bookmark.title === 'string' ? bookmark.title : bookmark.url).slice(0, MAX_TITLE_LEN) || bookmark.url,
     favIconUrl: sanitizeFavIconUrl(bookmark.favIconUrl),
-    tags: rawTags
-      .filter(t => typeof t === 'string')
-      .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-      .filter(t => t.length > 0)
-      .slice(0, MAX_TAGS),
+    tags: normalizeTags(bookmark.tags),
     notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
     pinned: Boolean(bookmark.pinned),
     folderId: typeof bookmark.folderId === 'string' && bookmark.folderId ? bookmark.folderId : null,
@@ -286,6 +281,18 @@ const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'bui
 
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
+// Normalise a raw tags array: type-check, trim, lowercase, hyphenate spaces,
+// truncate each tag, drop empties, and cap the count. Used in saveBookmark,
+// sanitizeBookmark, and update-bookmark so the logic stays in one place.
+function normalizeTags(rawTags) {
+  if (!Array.isArray(rawTags)) return [];
+  return rawTags
+    .filter(t => typeof t === 'string')
+    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+    .filter(t => t.length > 0)
+    .slice(0, MAX_TAGS);
+}
+
 // Allow only http/https favicon URLs (A03 – Injection).
 // data: URIs are rejected to keep chrome.storage.sync usage low — favicons
 // are re-fetched from Google's favicon service at render time when missing.
@@ -314,12 +321,7 @@ function sanitizeBookmark(raw) {
     ? raw.notes.slice(0, MAX_NOTES_LEN)
     : '';
 
-  const rawTags = Array.isArray(raw.tags) ? raw.tags : [];
-  const tags = rawTags
-    .filter(t => typeof t === 'string')
-    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-    .filter(t => t.length > 0)
-    .slice(0, MAX_TAGS);
+  const tags = normalizeTags(raw.tags);
 
   const pinned  = Boolean(raw.pinned);
   const now     = Date.now();
@@ -390,7 +392,6 @@ async function handleMessage(message) {
         // Only allow explicit mutable fields to be updated (A08).
         // Spreading message.bookmark directly would let a caller overwrite
         // immutable fields like id and createdAt.
-        const rawTags = Array.isArray(incoming.tags) ? incoming.tags : existing.tags;
         bookmarks[idx] = {
           ...existing,
           title: typeof incoming.title === 'string'
@@ -402,11 +403,7 @@ async function handleMessage(message) {
           notes: typeof incoming.notes === 'string'
             ? incoming.notes.slice(0, MAX_NOTES_LEN)
             : existing.notes,
-          tags: rawTags
-            .filter(t => typeof t === 'string')
-            .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-            .filter(t => t.length > 0)
-            .slice(0, MAX_TAGS),
+          tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : existing.tags),
           pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : existing.pinned,
           folderId: typeof incoming.folderId !== 'undefined'
             ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
