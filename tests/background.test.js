@@ -47,14 +47,12 @@ describe('sanitizeFavIconUrl', () => {
     expect(sanitizeFavIconUrl(url)).toBe(url);
   });
 
-  test('passes through data:image/ URLs', () => {
-    const url = 'data:image/png;base64,abc123==';
-    expect(sanitizeFavIconUrl(url)).toBe(url);
+  test('blocks data:image/ URLs (storage bloat prevention)', () => {
+    expect(sanitizeFavIconUrl('data:image/png;base64,abc123==')).toBe('');
   });
 
-  test('passes through data:image/ URLs regardless of case', () => {
-    const url = 'DATA:IMAGE/PNG;base64,abc123==';
-    expect(sanitizeFavIconUrl(url)).toBe(url);
+  test('blocks data:image/ URLs regardless of case', () => {
+    expect(sanitizeFavIconUrl('DATA:IMAGE/PNG;base64,abc123==')).toBe('');
   });
 
   test('blocks javascript: URLs', () => {
@@ -687,6 +685,36 @@ describe('handleMessage: export-bookmarks', () => {
     const exported = await sendMessage({ action: 'export-bookmarks' });
     expect(Array.isArray(exported)).toBe(true);
     expect(exported.length).toBe(2);
+  });
+});
+
+// ── handleMessage: get-storage-usage ─────────────────────────────────────────
+
+describe('handleMessage: get-storage-usage', () => {
+  let sendMessage;
+  beforeEach(() => { ({ sendMessage } = createBgContext()); });
+
+  test('returns bytesInUse and quota', async () => {
+    const result = await sendMessage({ action: 'get-storage-usage' });
+    expect(typeof result.bytesInUse).toBe('number');
+    expect(typeof result.quota).toBe('number');
+  });
+
+  test('quota matches QUOTA_BYTES constant (102400)', async () => {
+    const { quota } = await sendMessage({ action: 'get-storage-usage' });
+    expect(quota).toBe(102400);
+  });
+
+  test('bytesInUse grows after saving a bookmark', async () => {
+    const before = (await sendMessage({ action: 'get-storage-usage' })).bytesInUse;
+    await sendMessage({ action: 'save-bookmark', bookmark: { url: 'https://a.com', title: 'A', tags: [], notes: '', pinned: false, favIconUrl: '' }});
+    const after = (await sendMessage({ action: 'get-storage-usage' })).bytesInUse;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  test('bytesInUse is non-negative', async () => {
+    const { bytesInUse } = await sendMessage({ action: 'get-storage-usage' });
+    expect(bytesInUse).toBeGreaterThanOrEqual(0);
   });
 });
 

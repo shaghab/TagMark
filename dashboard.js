@@ -75,6 +75,8 @@
   const exportBtn        = $('exportBtn');
   const importFileInput  = $('importFileInput');
   const toast            = $('toast');
+  const storageMeterFill  = $('storageMeterFill');
+  const storageMeterLabel = $('storageMeterLabel');
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
@@ -148,6 +150,8 @@
       allBookmarks = [];
       allTags = [];
       allFolders = [];
+      console.error('[TagMark] loadBookmarks failed:', e);
+      showToast('Could not load bookmarks. Try reloading the page.', 'error');
     }
     renderSidebar();
     renderGtdFilter();
@@ -155,6 +159,34 @@
     renderDateTree();
     renderFolderTree();
     renderGrid();
+    updateStorageMeter();
+  }
+
+  // ── Storage meter ──────────────────────────────────────────────────────────
+
+  let _lastQuotaWarnPct = 0; // suppress repeat toasts within a session
+
+  async function updateStorageMeter() {
+    try {
+      const { bytesInUse, quota } = await chrome.runtime.sendMessage({ action: 'get-storage-usage' });
+      const pct = Math.min(100, Math.round((bytesInUse / quota) * 100));
+      const used  = (bytesInUse / 1024).toFixed(1);
+      const total = Math.round(quota / 1024);
+      storageMeterFill.style.width = pct + '%';
+      storageMeterFill.classList.toggle('warn',   pct >= 60 && pct < 85);
+      storageMeterFill.classList.toggle('danger', pct >= 85);
+      storageMeterLabel.textContent = `${used} KB / ${total} KB sync (${pct}%)`;
+
+      // Warn once per threshold crossing so the user knows to act (A09).
+      if (pct >= 95 && _lastQuotaWarnPct < 95) {
+        showToast('Sync storage almost full (≥95%). Export and delete old bookmarks.', 'error');
+      } else if (pct >= 80 && _lastQuotaWarnPct < 80) {
+        showToast('Sync storage over 80% full. Consider exporting a backup.', 'error');
+      }
+      _lastQuotaWarnPct = pct;
+    } catch {
+      storageMeterLabel.textContent = 'Sync storage unavailable';
+    }
   }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -865,16 +897,30 @@
     });
     bookmarkGrid.querySelectorAll('.card-favicon').forEach(img => {
       img.addEventListener('error', function () {
-        this.classList.add('hidden');
-        this.nextElementSibling.classList.remove('hidden');
+        const fallbackSrc = googleFaviconUrl(this.dataset.url || '');
+        if (fallbackSrc && this.src !== fallbackSrc) {
+          this.src = fallbackSrc;
+        } else {
+          this.classList.add('hidden');
+          this.nextElementSibling.classList.remove('hidden');
+        }
       });
     });
   }
 
+  function googleFaviconUrl(pageUrl) {
+    try {
+      const host = new URL(pageUrl).hostname;
+      return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
+    } catch {
+      return '';
+    }
+  }
+
   function renderCard(b) {
-    const faviconSrc = escAttr(b.favIconUrl || '');
-    const faviconHiddenClass = b.favIconUrl ? '' : ' hidden';
-    const faviconFallHiddenClass = b.favIconUrl ? ' hidden' : '';
+    const faviconSrc = escAttr(b.favIconUrl || googleFaviconUrl(b.url));
+    const faviconHiddenClass = faviconSrc ? '' : ' hidden';
+    const faviconFallHiddenClass = faviconSrc ? ' hidden' : '';
 
     const tagsHtml = (b.tags || []).map(t => {
       const ci = tagColorIndex(t);
@@ -914,7 +960,7 @@
     return `
       <article class="bookmark-card${b.pinned ? ' pinned' : ''}" data-id="${escAttr(b.id)}">
         <div class="card-header">
-          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" alt="" />
+          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" data-url="${escAttr(b.url)}" alt="" />
           <svg class="card-favicon-fallback${faviconFallHiddenClass}" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>
@@ -1223,7 +1269,12 @@
 
   // ── Live updates from background ───────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener(message => {
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    // Only accept messages from this extension's own background worker (A01).
+    // A web-page content script injected into a tab shares the same process
+    // but has a different sender.id, so this check prevents it from
+    // triggering repeated reloads or other dashboard state changes.
+    if (sender.id !== chrome.runtime.id) return;
     const refreshActions = ['bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported', 'folders-updated'];
     if (refreshActions.includes(message.action)) {
       loadBookmarks();

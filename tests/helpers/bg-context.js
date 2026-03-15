@@ -30,6 +30,8 @@ function createStorageMock() {
   return {
     _data: data,
 
+    QUOTA_BYTES: 102400,
+
     get(keys, cb) {
       const result = {};
       if (Array.isArray(keys)) {
@@ -55,6 +57,15 @@ function createStorageMock() {
       const arr = Array.isArray(keys) ? keys : [keys];
       arr.forEach(k => delete data[k]);
       if (cb) cb();
+    },
+
+    getBytesInUse(keys, cb) {
+      // Rough estimate: JSON-serialize all matching entries and count bytes.
+      const entries = keys === null
+        ? Object.entries(data)
+        : (Array.isArray(keys) ? keys : [keys]).map(k => [k, data[k]]).filter(([, v]) => v !== undefined);
+      const bytes = entries.reduce((sum, [k, v]) => sum + k.length + JSON.stringify(v).length, 0);
+      cb(bytes);
     },
   };
 }
