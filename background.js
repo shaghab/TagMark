@@ -260,17 +260,16 @@ function generateId() {
   return Date.now().toString(36) + buf[0].toString(36) + buf[1].toString(36);
 }
 
-function notifyDashboard(action) {
+async function notifyDashboard(action) {
   // Match only tabs showing this extension's own dashboard page.
   // A loose .includes() check would also match web pages whose URL
   // happens to contain 'dashboard.html' (A01 – Broken Access Control).
   const dashboardUrl = chrome.runtime.getURL('dashboard.html');
-  chrome.tabs.query({}, (tabs) => {
-    tabs.forEach(tab => {
-      if (tab.url && tab.url.startsWith(dashboardUrl)) {
-        chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
-      }
-    });
+  const tabs = await chrome.tabs.query({});
+  tabs.forEach(tab => {
+    if (tab.url && tab.url.startsWith(dashboardUrl)) {
+      chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
+    }
   });
 }
 
