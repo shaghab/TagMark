@@ -162,6 +162,8 @@
 
   // ── Storage meter ──────────────────────────────────────────────────────────
 
+  let _lastQuotaWarnPct = 0; // suppress repeat toasts within a session
+
   async function updateStorageMeter() {
     try {
       const { bytesInUse, quota } = await chrome.runtime.sendMessage({ action: 'get-storage-usage' });
@@ -172,6 +174,14 @@
       storageMeterFill.classList.toggle('warn',   pct >= 60 && pct < 85);
       storageMeterFill.classList.toggle('danger', pct >= 85);
       storageMeterLabel.textContent = `${used} KB / ${total} KB sync (${pct}%)`;
+
+      // Warn once per threshold crossing so the user knows to act (A09).
+      if (pct >= 95 && _lastQuotaWarnPct < 95) {
+        showToast('Sync storage almost full (≥95%). Export and delete old bookmarks.', 'error');
+      } else if (pct >= 80 && _lastQuotaWarnPct < 80) {
+        showToast('Sync storage over 80% full. Consider exporting a backup.', 'error');
+      }
+      _lastQuotaWarnPct = pct;
     } catch {
       storageMeterLabel.textContent = 'Sync storage unavailable';
     }
