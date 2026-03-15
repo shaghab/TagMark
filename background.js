@@ -544,9 +544,8 @@ async function handleMessage(message) {
     }
 
     case 'get-settings': {
-      return new Promise(resolve => {
-        chrome.storage.sync.get([SETTINGS_KEY], r => resolve(r[SETTINGS_KEY] || { theme: 'light' }));
-      });
+      const result = await storageGet([SETTINGS_KEY]);
+      return result[SETTINGS_KEY] || { theme: 'light' };
     }
 
     case 'save-settings': {
@@ -555,9 +554,8 @@ async function handleMessage(message) {
       const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
         ? message.settings.theme
         : 'light';
-      return new Promise(resolve => {
-        chrome.storage.sync.set({ [SETTINGS_KEY]: { theme } }, () => resolve({ success: true }));
-      });
+      await storageSet({ [SETTINGS_KEY]: { theme } });
+      return { success: true };
     }
 
     default:
