@@ -865,16 +865,30 @@
     });
     bookmarkGrid.querySelectorAll('.card-favicon').forEach(img => {
       img.addEventListener('error', function () {
-        this.classList.add('hidden');
-        this.nextElementSibling.classList.remove('hidden');
+        const fallbackSrc = googleFaviconUrl(this.dataset.url || '');
+        if (fallbackSrc && this.src !== fallbackSrc) {
+          this.src = fallbackSrc;
+        } else {
+          this.classList.add('hidden');
+          this.nextElementSibling.classList.remove('hidden');
+        }
       });
     });
   }
 
+  function googleFaviconUrl(pageUrl) {
+    try {
+      const host = new URL(pageUrl).hostname;
+      return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
+    } catch {
+      return '';
+    }
+  }
+
   function renderCard(b) {
-    const faviconSrc = escAttr(b.favIconUrl || '');
-    const faviconHiddenClass = b.favIconUrl ? '' : ' hidden';
-    const faviconFallHiddenClass = b.favIconUrl ? ' hidden' : '';
+    const faviconSrc = escAttr(b.favIconUrl || googleFaviconUrl(b.url));
+    const faviconHiddenClass = faviconSrc ? '' : ' hidden';
+    const faviconFallHiddenClass = faviconSrc ? ' hidden' : '';
 
     const tagsHtml = (b.tags || []).map(t => {
       const ci = tagColorIndex(t);
@@ -914,7 +928,7 @@
     return `
       <article class="bookmark-card${b.pinned ? ' pinned' : ''}" data-id="${escAttr(b.id)}">
         <div class="card-header">
-          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" alt="" />
+          <img class="card-favicon${faviconHiddenClass}" src="${faviconSrc}" data-url="${escAttr(b.url)}" alt="" />
           <svg class="card-favicon-fallback${faviconFallHiddenClass}" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.5"/>

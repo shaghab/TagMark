@@ -47,14 +47,12 @@ describe('sanitizeFavIconUrl', () => {
     expect(sanitizeFavIconUrl(url)).toBe(url);
   });
 
-  test('passes through data:image/ URLs', () => {
-    const url = 'data:image/png;base64,abc123==';
-    expect(sanitizeFavIconUrl(url)).toBe(url);
+  test('blocks data:image/ URLs (storage bloat prevention)', () => {
+    expect(sanitizeFavIconUrl('data:image/png;base64,abc123==')).toBe('');
   });
 
-  test('passes through data:image/ URLs regardless of case', () => {
-    const url = 'DATA:IMAGE/PNG;base64,abc123==';
-    expect(sanitizeFavIconUrl(url)).toBe(url);
+  test('blocks data:image/ URLs regardless of case', () => {
+    expect(sanitizeFavIconUrl('DATA:IMAGE/PNG;base64,abc123==')).toBe('');
   });
 
   test('blocks javascript: URLs', () => {

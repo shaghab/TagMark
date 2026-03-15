@@ -287,12 +287,12 @@ const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'bui
 
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
-// Allow only http/https favicons and inline data images (A03 – Injection).
-// javascript: and data:text/html URIs must never reach an img.src attribute.
+// Allow only http/https favicon URLs (A03 – Injection).
+// data: URIs are rejected to keep chrome.storage.sync usage low — favicons
+// are re-fetched from Google's favicon service at render time when missing.
 function sanitizeFavIconUrl(raw) {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim().slice(0, MAX_URL_LEN);
-  if (/^data:image\//i.test(trimmed)) return trimmed;
   try {
     const parsed = new URL(trimmed);
     return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
