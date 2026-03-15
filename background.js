@@ -519,7 +519,7 @@ async function handleMessage(message) {
         if (!b) continue; // skip invalid entries
         const idx = merged.findIndex(e => e.url === b.url);
         if (idx >= 0) {
-          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id };
+          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id, createdAt: merged[idx].createdAt };
         } else {
           merged.push(b);
         }
