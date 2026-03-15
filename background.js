@@ -499,7 +499,6 @@ async function handleMessage(message) {
       });
       if (changed) await saveBookmarks(bookmarks);
       notifyDashboard('folders-updated');
-      if (changed) notifyDashboard('bookmark-updated');
       return { success: true };
     }
 
