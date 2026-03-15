@@ -1257,7 +1257,12 @@
 
   // ── Live updates from background ───────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener(message => {
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    // Only accept messages from this extension's own background worker (A01).
+    // A web-page content script injected into a tab shares the same process
+    // but has a different sender.id, so this check prevents it from
+    // triggering repeated reloads or other dashboard state changes.
+    if (sender.id !== chrome.runtime.id) return;
     const refreshActions = ['bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported', 'folders-updated'];
     if (refreshActions.includes(message.action)) {
       loadBookmarks();
