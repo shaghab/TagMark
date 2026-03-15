@@ -82,10 +82,40 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  const PRIORITY_SCORE = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
+  const PRIORITY_RANK = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
 
+  // Returns { action, score } for a bookmark based on the decision matrix.
+  // action is one of: 'do-now' | 'do' | 'schedule' | 'delegate' | 'incubate' | 'ignore'
+  // score allows sorting within the same action bucket (higher = more important).
   function calcScore(b) {
-    return (PRIORITY_SCORE[b.urgency] || 0) * (PRIORITY_SCORE[b.importance] || 0);
+    const imp = PRIORITY_RANK[b.importance] || 0;
+    const urg = PRIORITY_RANK[b.urgency]    || 0;
+
+    let action;
+    if (imp >= 3) {
+      // Critical or High importance
+      if (urg === 4)      action = 'do-now';
+      else if (urg === 3) action = 'do';
+      else                action = 'schedule';
+    } else if (imp === 2) {
+      // Medium importance
+      if (urg === 4)      action = 'do';
+      else if (urg === 3) action = 'schedule';
+      else                action = 'incubate';
+    } else if (imp === 1) {
+      // Low importance
+      if (urg >= 3)       action = 'delegate';
+      else if (urg === 2) action = 'incubate';
+      else                action = 'ignore';
+    } else {
+      // No importance
+      if (urg >= 3)       action = 'delegate';
+      else                action = 'ignore';
+    }
+
+    const BASE = { 'do-now': 600, 'do': 500, 'schedule': 400, 'delegate': 300, 'incubate': 200, 'ignore': 100 };
+    const score = BASE[action] + imp * 5 + urg;
+    return { action, score };
   }
 
   const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
@@ -861,9 +891,11 @@
     const typeHtml = b.contentType
       ? `<span class="card-badge type-badge type-${escAttr(b.contentType)}">${escHtml(b.contentType.charAt(0).toUpperCase() + b.contentType.slice(1))}</span>`
       : '';
-    const score = calcScore(b);
-    const scoreHtml = score > 0
-      ? `<span class="card-badge score-badge score-${score >= 12 ? 'critical' : score >= 6 ? 'high' : score >= 2 ? 'medium' : 'low'}" title="Urgency: ${escAttr(b.urgency||'none')} · Importance: ${escAttr(b.importance||'none')}">⚡ ${score}</span>`
+    const { action: priorityAction, score } = calcScore(b);
+    const hasPriority = (b.importance && b.importance !== 'none') || (b.urgency && b.urgency !== 'none');
+    const ACTION_LABEL = { 'do-now': 'Do Now', 'do': 'Do', 'schedule': 'Schedule', 'delegate': 'Delegate', 'incubate': 'Incubate', 'ignore': 'Ignore' };
+    const scoreHtml = hasPriority
+      ? `<span class="card-badge score-badge score-${escAttr(priorityAction)}" title="Urgency: ${escAttr(b.urgency||'none')} · Importance: ${escAttr(b.importance||'none')} · Score: ${score}">⚡ ${escHtml(ACTION_LABEL[priorityAction])}</span>`
       : '';
     const badgesHtml = (gtdHtml || typeHtml || scoreHtml)
       ? `<div class="card-badges">${scoreHtml}${gtdHtml}${typeHtml}</div>`
