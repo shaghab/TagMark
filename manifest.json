@@ -10,7 +10,8 @@
     "storage",
     "tabs",
     "contextMenus",
-    "activeTab"
+    "activeTab",
+    "identity"
   ],
 
   "background": {

@@ -76,6 +76,42 @@
     </div>
 
     <div class="sidebar-footer">
+
+      <!-- Cloud Sync -->
+      <div class="cloud-sync-section" id="cloudSyncSection">
+
+        <!-- Signed-out state -->
+        <button class="icon-text-btn cloud-signin-btn" id="cloudSignInBtn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Sign in to sync
+        </button>
+
+        <!-- Signed-in state -->
+        <div class="cloud-signed-in" id="cloudSignedIn" style="display:none">
+          <div class="cloud-user-row">
+            <svg class="icon cloud-icon-sm" viewBox="0 0 24 24" fill="none">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="cloud-email" id="cloudEmail"></span>
+          </div>
+          <div class="cloud-actions-row">
+            <button class="icon-text-btn cloud-sync-btn" id="cloudSyncBtn">
+              <svg class="icon" id="cloudSyncIcon" viewBox="0 0 24 24" fill="none">
+                <polyline points="23,4 23,10 17,10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="1,20 1,14 7,14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Sync now
+            </button>
+            <button class="icon-text-btn cloud-signout-btn" id="cloudSignOutBtn">Sign out</button>
+          </div>
+          <span class="cloud-last-sync" id="cloudLastSync"></span>
+        </div>
+
+      </div>
+
       <div class="storage-meter" id="storageMeter" title="chrome.storage.sync usage">
         <div class="storage-meter-bar">
           <div class="storage-meter-fill" id="storageMeterFill"></div>

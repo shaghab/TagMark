@@ -1682,3 +1682,81 @@ body {
 [data-theme="dark"] .type-chip.type-listen  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-chip.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-chip.type-try     { background: #1c1500; color: #fde68a; }
+
+/* ── Cloud Sync ────────────────────────────────────────────────────────────── */
+
+.cloud-sync-section {
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.cloud-signin-btn {
+  width: 100%;
+  color: var(--accent);
+}
+
+.cloud-signed-in {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cloud-user-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.cloud-icon-sm {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+}
+
+.cloud-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.cloud-actions-row {
+  display: flex;
+  gap: 4px;
+}
+
+.cloud-sync-btn {
+  flex: 1;
+  color: var(--accent);
+}
+
+.cloud-sync-btn.syncing .icon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.cloud-signout-btn {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 6px;
+}
+
+.cloud-signout-btn:hover {
+  color: var(--danger);
+}
+
+.cloud-last-sync {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-left: 2px;
+}

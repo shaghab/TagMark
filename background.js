@@ -1,6 +1,8 @@
 // TagMark Background Service Worker
 // Handles context menus, sync, and cross-tab communication
 
+importScripts('supabase.js');
+
 const STORAGE_KEY  = 'tagmark_bookmarks'; // legacy — kept only for one-time migration
 const SETTINGS_KEY = 'tagmark_settings';
 const INDEX_KEY    = 'tagmark_index';     // ordered array of bookmark IDs
@@ -369,13 +371,17 @@ async function handleMessage(message) {
     case 'get-bookmarks':
       return await getBookmarks();
 
-    case 'save-bookmark':
-      return await saveBookmark(message.bookmark);
+    case 'save-bookmark': {
+      const saved = await saveBookmark(message.bookmark);
+      cloudPushBookmark(saved); // fire-and-forget
+      return saved;
+    }
 
     case 'delete-bookmark': {
       const bookmarks = await getBookmarks();
       const filtered = bookmarks.filter(b => b.id !== message.id);
       await saveBookmarks(filtered);
+      cloudRemoveBookmark(message.id); // fire-and-forget
       notifyDashboard('bookmark-deleted');
       return { success: true };
     }
@@ -423,6 +429,7 @@ async function handleMessage(message) {
           updatedAt: Date.now()
         };
         await saveBookmarks(bookmarks);
+        cloudPushBookmark(bookmarks[idx]); // fire-and-forget
         notifyDashboard('bookmark-updated');
       }
       return { success: true };
@@ -553,7 +560,108 @@ async function handleMessage(message) {
       return { success: true };
     }
 
+    // ── Cloud sync actions ───────────────────────────────────────────────────
+
+    case 'get-cloud-status': {
+      const session  = await cloudGetSession();
+      const lastSync = await cloudGetLastSync();
+      return { user: session ? session.user : null, lastSync };
+    }
+
+    case 'cloud-sign-in': {
+      // 1. OAuth + token exchange
+      const session = await cloudSignIn();
+      const { user } = session;
+      const token    = session.access_token;
+
+      // 2. Push all local bookmarks to cloud
+      const localBms = await getBookmarks();
+      await cloudPushAll(localBms, token, user.id);
+
+      // 3. Fetch everything from cloud and merge (cloud may have data from other devices)
+      const cloudBms = await cloudFetchAll(token);
+      const merged   = mergeBookmarks(localBms, cloudBms);
+      if (merged.length !== localBms.length) await saveBookmarks(merged);
+
+      const lastSync = Date.now();
+      await cloudSetLastSync(lastSync);
+      notifyDashboard('cloud-status-changed');
+      return { user, lastSync };
+    }
+
+    case 'cloud-sign-out': {
+      await cloudSignOut();
+      notifyDashboard('cloud-status-changed');
+      return { success: true };
+    }
+
+    case 'cloud-sync': {
+      const token = await cloudGetValidToken();
+      if (!token) return { error: 'Not signed in' };
+
+      const session  = await cloudGetSession();
+      const userId   = session.user.id;
+
+      // Bidirectional merge: fetch cloud, merge with local, push winners back
+      const [localBms, cloudBms] = await Promise.all([
+        getBookmarks(),
+        cloudFetchAll(token)
+      ]);
+
+      const merged  = mergeBookmarks(localBms, cloudBms);
+      await saveBookmarks(merged);
+      await cloudPushAll(merged, token, userId);
+
+      const lastSync = Date.now();
+      await cloudSetLastSync(lastSync);
+      notifyDashboard('bookmark-updated');
+      notifyDashboard('cloud-status-changed');
+      return { lastSync };
+    }
+
     default:
       return { error: 'Unknown action' };
+  }
+}
+
+// ── Cloud sync helpers ────────────────────────────────────────────────────────
+
+// Merge local and cloud arrays: per-ID, keep the bookmark with newer updatedAt.
+function mergeBookmarks(local, cloud) {
+  const map = new Map();
+  for (const bm of local)  map.set(bm.id, bm);
+  for (const bm of cloud) {
+    const existing = map.get(bm.id);
+    if (!existing || bm.updatedAt > existing.updatedAt) map.set(bm.id, bm);
+  }
+  // Preserve original local ordering for existing items; append new cloud items at end
+  const localIds = new Set(local.map(b => b.id));
+  const newCloud = cloud.filter(b => !localIds.has(b.id));
+  return [
+    ...local.map(b => map.get(b.id)),
+    ...newCloud.map(b => map.get(b.id))
+  ];
+}
+
+// Fire-and-forget: push one bookmark to cloud if signed in.
+async function cloudPushBookmark(bm) {
+  try {
+    const token   = await cloudGetValidToken();
+    if (!token) return;
+    const session = await cloudGetSession();
+    await cloudUpsertBookmark(bm, token, session.user.id);
+  } catch (err) {
+    console.warn('[TagMark] cloud push failed:', err.message);
+  }
+}
+
+// Fire-and-forget: delete one bookmark from cloud if signed in.
+async function cloudRemoveBookmark(id) {
+  try {
+    const token = await cloudGetValidToken();
+    if (!token) return;
+    await cloudDeleteBookmark(id, token);
+  } catch (err) {
+    console.warn('[TagMark] cloud delete failed:', err.message);
   }
 }

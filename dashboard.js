@@ -77,6 +77,13 @@
   const toast            = $('toast');
   const storageMeterFill  = $('storageMeterFill');
   const storageMeterLabel = $('storageMeterLabel');
+  const cloudSignInBtn    = $('cloudSignInBtn');
+  const cloudSignedIn     = $('cloudSignedIn');
+  const cloudEmail        = $('cloudEmail');
+  const cloudSyncBtn      = $('cloudSyncBtn');
+  const cloudSignOutBtn   = $('cloudSignOutBtn');
+  const cloudLastSync     = $('cloudLastSync');
+  const cloudSyncIcon     = $('cloudSyncIcon');
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
@@ -1279,6 +1286,79 @@
     if (refreshActions.includes(message.action)) {
       loadBookmarks();
     }
+    if (message.action === 'cloud-status-changed') {
+      updateCloudStatus();
+    }
+  });
+
+  // ── Cloud Sync UI ───────────────────────────────────────────────────────────
+
+  function formatLastSync(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60_000)  return 'Synced just now';
+    if (diff < 3600_000) return `Synced ${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86400_000) return `Synced ${Math.floor(diff / 3600_000)}h ago`;
+    return `Synced ${new Date(ts).toLocaleDateString()}`;
+  }
+
+  async function updateCloudStatus() {
+    try {
+      const { user, lastSync } = await chrome.runtime.sendMessage({ action: 'get-cloud-status' });
+      if (user) {
+        cloudSignInBtn.style.display = 'none';
+        cloudSignedIn.style.display  = '';
+        cloudEmail.textContent       = user.email;
+        cloudLastSync.textContent    = formatLastSync(lastSync);
+      } else {
+        cloudSignInBtn.style.display = '';
+        cloudSignedIn.style.display  = 'none';
+      }
+    } catch {
+      // Non-fatal — cloud status is optional
+    }
+  }
+
+  cloudSignInBtn.addEventListener('click', async () => {
+    cloudSignInBtn.disabled = true;
+    cloudSignInBtn.textContent = 'Signing in…';
+    try {
+      const { user } = await chrome.runtime.sendMessage({ action: 'cloud-sign-in' });
+      await updateCloudStatus();
+      showToast(`Signed in as ${user.email} — bookmarks synced!`);
+      loadBookmarks(); // refresh grid after initial sync
+    } catch (err) {
+      showToast(`Sign-in failed: ${err.message}`);
+    } finally {
+      cloudSignInBtn.disabled = false;
+      cloudSignInBtn.innerHTML =
+        `<svg class="icon" viewBox="0 0 24 24" fill="none">` +
+        `<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `</svg>Sign in to sync`;
+    }
+  });
+
+  cloudSyncBtn.addEventListener('click', async () => {
+    cloudSyncBtn.disabled = true;
+    cloudSyncIcon.style.animation = 'spin 0.9s linear infinite';
+    try {
+      const result = await chrome.runtime.sendMessage({ action: 'cloud-sync' });
+      if (result.error) { showToast(`Sync failed: ${result.error}`); return; }
+      cloudLastSync.textContent = formatLastSync(result.lastSync);
+      showToast('Synced with cloud!');
+      loadBookmarks();
+    } catch (err) {
+      showToast(`Sync failed: ${err.message}`);
+    } finally {
+      cloudSyncBtn.disabled = false;
+      cloudSyncIcon.style.animation = '';
+    }
+  });
+
+  cloudSignOutBtn.addEventListener('click', async () => {
+    await chrome.runtime.sendMessage({ action: 'cloud-sign-out' });
+    await updateCloudStatus();
+    showToast('Signed out of cloud sync.');
   });
 
   // ── Toast ──────────────────────────────────────────────────────────────────
@@ -1295,5 +1375,6 @@
 
   applyTheme(getTheme());
   loadBookmarks();
+  updateCloudStatus();
 
 })();
