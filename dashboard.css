@@ -393,6 +393,34 @@ body {
   background: var(--accent-light);
 }
 
+.storage-meter {
+  padding: 6px 10px 4px;
+}
+
+.storage-meter-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.storage-meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease, background 0.3s;
+  width: 0%;
+}
+
+.storage-meter-fill.warn  { background: #f59e0b; }
+.storage-meter-fill.danger { background: #ef4444; }
+
+.storage-meter-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .sidebar-footer {
   padding: 12px 8px;
   border-top: 1px solid var(--border);

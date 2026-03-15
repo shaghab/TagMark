@@ -75,6 +75,8 @@
   const exportBtn        = $('exportBtn');
   const importFileInput  = $('importFileInput');
   const toast            = $('toast');
+  const storageMeterFill  = $('storageMeterFill');
+  const storageMeterLabel = $('storageMeterLabel');
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +157,24 @@
     renderDateTree();
     renderFolderTree();
     renderGrid();
+    updateStorageMeter();
+  }
+
+  // ── Storage meter ──────────────────────────────────────────────────────────
+
+  async function updateStorageMeter() {
+    try {
+      const { bytesInUse, quota } = await chrome.runtime.sendMessage({ action: 'get-storage-usage' });
+      const pct = Math.min(100, Math.round((bytesInUse / quota) * 100));
+      const used  = (bytesInUse / 1024).toFixed(1);
+      const total = Math.round(quota / 1024);
+      storageMeterFill.style.width = pct + '%';
+      storageMeterFill.classList.toggle('warn',   pct >= 60 && pct < 85);
+      storageMeterFill.classList.toggle('danger', pct >= 85);
+      storageMeterLabel.textContent = `${used} KB / ${total} KB sync (${pct}%)`;
+    } catch {
+      storageMeterLabel.textContent = 'Sync storage unavailable';
+    }
   }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────

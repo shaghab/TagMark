@@ -535,6 +535,14 @@ async function handleMessage(message) {
     case 'export-bookmarks':
       return await getBookmarks();
 
+    case 'get-storage-usage': {
+      const [bytesInUse, quota] = await Promise.all([
+        new Promise(resolve => chrome.storage.sync.getBytesInUse(null, resolve)),
+        Promise.resolve(chrome.storage.sync.QUOTA_BYTES)
+      ]);
+      return { bytesInUse, quota };
+    }
+
     case 'get-settings': {
       return new Promise(resolve => {
         chrome.storage.sync.get([SETTINGS_KEY], r => resolve(r[SETTINGS_KEY] || { theme: 'light' }));
