@@ -221,17 +221,12 @@ async function saveBookmark(bookmark) {
 
   // Enforce field-length limits so a tab with an unusually long title or
   // a bulk-programmatic caller cannot bloat chrome.storage.sync (A08).
-  const rawTags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const newBookmark = {
     id: existingIndex >= 0 ? bookmarks[existingIndex].id : generateId(),
     url: bookmark.url.slice(0, MAX_URL_LEN),
     title: (typeof bookmark.title === 'string' ? bookmark.title : bookmark.url).slice(0, MAX_TITLE_LEN) || bookmark.url,
     favIconUrl: sanitizeFavIconUrl(bookmark.favIconUrl),
-    tags: rawTags
-      .filter(t => typeof t === 'string')
-      .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-      .filter(t => t.length > 0)
-      .slice(0, MAX_TAGS),
+    tags: normalizeTags(bookmark.tags),
     notes: (typeof bookmark.notes === 'string' ? bookmark.notes : '').slice(0, MAX_NOTES_LEN),
     pinned: Boolean(bookmark.pinned),
     folderId: typeof bookmark.folderId === 'string' && bookmark.folderId ? bookmark.folderId : null,
@@ -260,17 +255,16 @@ function generateId() {
   return Date.now().toString(36) + buf[0].toString(36) + buf[1].toString(36);
 }
 
-function notifyDashboard(action) {
+async function notifyDashboard(action) {
   // Match only tabs showing this extension's own dashboard page.
   // A loose .includes() check would also match web pages whose URL
   // happens to contain 'dashboard.html' (A01 – Broken Access Control).
   const dashboardUrl = chrome.runtime.getURL('dashboard.html');
-  chrome.tabs.query({}, (tabs) => {
-    tabs.forEach(tab => {
-      if (tab.url && tab.url.startsWith(dashboardUrl)) {
-        chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
-      }
-    });
+  const tabs = await chrome.tabs.query({});
+  tabs.forEach(tab => {
+    if (tab.url && tab.url.startsWith(dashboardUrl)) {
+      chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
+    }
   });
 }
 
@@ -286,6 +280,18 @@ const GTD_STATUSES  = ['next', 'later', 'someday', 'waiting', 'done', 'archived'
 const CONTENT_TYPES = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
+
+// Normalise a raw tags array: type-check, trim, lowercase, hyphenate spaces,
+// truncate each tag, drop empties, and cap the count. Used in saveBookmark,
+// sanitizeBookmark, and update-bookmark so the logic stays in one place.
+function normalizeTags(rawTags) {
+  if (!Array.isArray(rawTags)) return [];
+  return rawTags
+    .filter(t => typeof t === 'string')
+    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
+    .filter(t => t.length > 0)
+    .slice(0, MAX_TAGS);
+}
 
 // Allow only http/https favicon URLs (A03 – Injection).
 // data: URIs are rejected to keep chrome.storage.sync usage low — favicons
@@ -315,12 +321,7 @@ function sanitizeBookmark(raw) {
     ? raw.notes.slice(0, MAX_NOTES_LEN)
     : '';
 
-  const rawTags = Array.isArray(raw.tags) ? raw.tags : [];
-  const tags = rawTags
-    .filter(t => typeof t === 'string')
-    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-    .filter(t => t.length > 0)
-    .slice(0, MAX_TAGS);
+  const tags = normalizeTags(raw.tags);
 
   const pinned  = Boolean(raw.pinned);
   const now     = Date.now();
@@ -391,7 +392,6 @@ async function handleMessage(message) {
         // Only allow explicit mutable fields to be updated (A08).
         // Spreading message.bookmark directly would let a caller overwrite
         // immutable fields like id and createdAt.
-        const rawTags = Array.isArray(incoming.tags) ? incoming.tags : existing.tags;
         bookmarks[idx] = {
           ...existing,
           title: typeof incoming.title === 'string'
@@ -403,11 +403,7 @@ async function handleMessage(message) {
           notes: typeof incoming.notes === 'string'
             ? incoming.notes.slice(0, MAX_NOTES_LEN)
             : existing.notes,
-          tags: rawTags
-            .filter(t => typeof t === 'string')
-            .map(t => t.trim().toLowerCase().replace(/\s+/g, '-').slice(0, MAX_TAG_LEN))
-            .filter(t => t.length > 0)
-            .slice(0, MAX_TAGS),
+          tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : existing.tags),
           pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : existing.pinned,
           folderId: typeof incoming.folderId !== 'undefined'
             ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
@@ -500,7 +496,6 @@ async function handleMessage(message) {
       });
       if (changed) await saveBookmarks(bookmarks);
       notifyDashboard('folders-updated');
-      if (changed) notifyDashboard('bookmark-updated');
       return { success: true };
     }
 
@@ -521,7 +516,7 @@ async function handleMessage(message) {
         if (!b) continue; // skip invalid entries
         const idx = merged.findIndex(e => e.url === b.url);
         if (idx >= 0) {
-          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id };
+          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id, createdAt: merged[idx].createdAt };
         } else {
           merged.push(b);
         }
@@ -544,9 +539,8 @@ async function handleMessage(message) {
     }
 
     case 'get-settings': {
-      return new Promise(resolve => {
-        chrome.storage.sync.get([SETTINGS_KEY], r => resolve(r[SETTINGS_KEY] || { theme: 'light' }));
-      });
+      const result = await storageGet([SETTINGS_KEY]);
+      return result[SETTINGS_KEY] || { theme: 'light' };
     }
 
     case 'save-settings': {
@@ -555,9 +549,8 @@ async function handleMessage(message) {
       const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
         ? message.settings.theme
         : 'light';
-      return new Promise(resolve => {
-        chrome.storage.sync.set({ [SETTINGS_KEY]: { theme } }, () => resolve({ success: true }));
-      });
+      await storageSet({ [SETTINGS_KEY]: { theme } });
+      return { success: true };
     }
 
     default:

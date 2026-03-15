@@ -87,6 +87,7 @@ const TYPE_CSS_CLASS = Object.fromEntries(CONTENT_TYPES.map(t => [t, 'type-' + t
 
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
+const MAX_URL_LEN         = 2048; // max length for URLs and favicon URLs
 const TOAST_DURATION_MS   = 2800; // how long toast notifications stay visible
 const BLUR_HIDE_DELAY_MS  = 150;  // delay before hiding autocomplete on input blur
 const AC_MAX_ITEMS        = 8;    // max autocomplete suggestions shown at once
@@ -135,7 +136,7 @@ function normalizeTag(tag) {
 // are re-fetched from Google's favicon service at render time when missing.
 function sanitizeFavIconUrl(raw) {
   if (typeof raw !== 'string') return '';
-  const trimmed = raw.trim().slice(0, 2048);
+  const trimmed = raw.trim().slice(0, MAX_URL_LEN);
   try {
     const parsed = new URL(trimmed);
     return ['http:', 'https:'].includes(parsed.protocol) ? trimmed : '';
