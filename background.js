@@ -136,7 +136,37 @@ async function getBookmarks() {
   const bmKeys = ids.map(id => BM_PREFIX + id);
   const bmResult = await storageGet(bmKeys);
   // Preserve ordering from index; skip any entries missing from storage.
-  return ids.map(id => bmResult[BM_PREFIX + id]).filter(Boolean);
+  // Re-inflate compacted bookmarks with default values for omitted fields so
+  // callers always receive a fully-shaped object.
+  return ids
+    .map(id => bmResult[BM_PREFIX + id])
+    .filter(Boolean)
+    .map(bm => ({
+      tags: [],
+      notes: '',
+      pinned: false,
+      folderId: null,
+      gtdStatus: null,
+      contentType: null,
+      urgency: null,
+      importance: null,
+      ...bm
+    }));
+}
+
+// Strip fields whose value is null, undefined, false, or empty string before
+// writing to storage — missing key and null are equivalent on read, so this
+// saves ~40–50 bytes per bookmark with no data loss.
+function compactBookmark(bm) {
+  const out = {};
+  for (const [k, v] of Object.entries(bm)) {
+    if (v !== null && v !== undefined && v !== false && v !== '') {
+      // Keep non-empty arrays; skip empty ones (e.g. tags: [])
+      if (Array.isArray(v) && v.length === 0) continue;
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 async function saveBookmarks(bookmarks) {
@@ -149,7 +179,7 @@ async function saveBookmarks(bookmarks) {
 
   const toSet = { [INDEX_KEY]: bookmarks.map(b => b.id) };
   for (const bm of bookmarks) {
-    toSet[BM_PREFIX + bm.id] = bm;
+    toSet[BM_PREFIX + bm.id] = compactBookmark(bm);
   }
 
   if (removedKeys.length > 0) await storageRemove(removedKeys);
