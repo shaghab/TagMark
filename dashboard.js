@@ -150,6 +150,8 @@
       allBookmarks = [];
       allTags = [];
       allFolders = [];
+      console.error('[TagMark] loadBookmarks failed:', e);
+      showToast('Could not load bookmarks. Try reloading the page.', 'error');
     }
     renderSidebar();
     renderGtdFilter();
