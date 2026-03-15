@@ -798,7 +798,7 @@
         case 'oldest': return a.createdAt - b.createdAt;
         case 'alpha':  return (a.title||'').localeCompare(b.title||'');
         case 'alpha-desc': return (b.title||'').localeCompare(a.title||'');
-        case 'score':  return calcScore(b) - calcScore(a);
+        case 'score':  return calcScore(b).score - calcScore(a).score;
         default:       return b.createdAt - a.createdAt; // newest
       }
     });
