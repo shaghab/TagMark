@@ -1,4 +1,5 @@
 // TagMark Popup Script
+// Copyright (c) 2026 Asim Ghaffar (github.com/shaghab)
 
 (function () {
   'use strict';
