@@ -1,5 +1,6 @@
 // TagMark Background Service Worker
 // Handles context menus, sync, and cross-tab communication
+// Copyright (c) 2026 Asim Ghaffar (github.com/shaghab)
 
 const STORAGE_KEY  = 'tagmark_bookmarks'; // legacy — kept only for one-time migration
 const SETTINGS_KEY = 'tagmark_settings';
