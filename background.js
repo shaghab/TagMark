@@ -65,7 +65,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ── URL Validation ───────────────────────────────────────────────────────────
 
-const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
+const ALLOWED_URL_SCHEMES = ['http:', 'https:'];
 
 function isValidUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -214,6 +214,9 @@ async function saveBookmark(bookmark) {
   if (!isValidUrl(bookmark.url)) {
     throw new Error('Invalid URL scheme');
   }
+  if (typeof bookmark.url === 'string' && bookmark.url.length > MAX_URL_LEN) {
+    throw new Error('URL exceeds maximum allowed length');
+  }
 
   const bookmarks = await getBookmarks();
 
@@ -360,7 +363,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;
 
   handleMessage(message).then(sendResponse).catch(err => {
-    sendResponse({ error: err.message });
+    console.error('[TagMark] message handler error:', err);
+    sendResponse({ error: 'An error occurred. Please try again.' });
   });
   return true; // Keep channel open for async response
 });

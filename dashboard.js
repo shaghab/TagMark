@@ -121,7 +121,7 @@
     return { action, score };
   }
 
-  const ALLOWED_URL_SCHEMES = ['http:', 'https:', 'file:'];
+  const ALLOWED_URL_SCHEMES = ['http:', 'https:'];
 
   function safeUrl(url) {
     try {
