@@ -21,7 +21,7 @@ const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', '
 
 // ── Context Menu Setup ──────────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(details => {
   chrome.contextMenus.create({
     id: 'tagmark-save-page',
     title: 'Save to TagMark',
@@ -33,6 +33,22 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Save link to TagMark',
     contexts: ['link']
   });
+
+  // First-run onboarding.
+  // - 'install' → open the welcome page in a new tab so users discover the
+  //   extension's features (and Cloud Sync) immediately.
+  // - 'update'  → silently mark welcomeSeen so existing users aren't
+  //   prompted by the dashboard onboarding banner on their first reopen of
+  //   the upgraded build.
+  if (details && details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }).catch(() => {});
+  } else if (details && details.reason === 'update') {
+    storageGet([SETTINGS_KEY]).then(result => {
+      const current = result[SETTINGS_KEY] || {};
+      if (current.welcomeSeen) return;
+      storageSet({ [SETTINGS_KEY]: { ...current, welcomeSeen: true } });
+    });
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -556,15 +572,28 @@ async function handleMessage(message) {
     }
 
     case 'save-settings': {
-      // Only persist recognised theme values; reject arbitrary objects (A08).
-      // The driveSync sub-object is preserved verbatim so a UI write to theme
-      // doesn't clobber the user's sync configuration.
+      // Allowlist recognised settings; reject anything else (A08).
+      // Each field is only mutated if the caller included it, so a UI write
+      // to one setting doesn't clobber the user's sync configuration or
+      // unrelated fields.
       const VALID_THEMES = ['light', 'dark'];
-      const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
-        ? message.settings.theme
-        : 'light';
+      const incoming = message.settings || {};
       const current = (await storageGet([SETTINGS_KEY]))[SETTINGS_KEY] || {};
-      await storageSet({ [SETTINGS_KEY]: { ...current, theme } });
+      const next = { ...current };
+
+      if ('theme' in incoming) {
+        // Invalid values fall back to the safe default rather than persisting
+        // arbitrary strings.
+        next.theme = VALID_THEMES.includes(incoming.theme) ? incoming.theme : 'light';
+      } else if (next.theme === undefined) {
+        next.theme = 'light';
+      }
+
+      if ('welcomeSeen' in incoming) {
+        next.welcomeSeen = !!incoming.welcomeSeen;
+      }
+
+      await storageSet({ [SETTINGS_KEY]: next });
       return { success: true };
     }
 

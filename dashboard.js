@@ -1389,6 +1389,9 @@
         showToast(`Sign-in failed: ${res.error}`);
       } else {
         showToast('Connected to Google Drive');
+        // Connecting is a definitive signal the user knows about Cloud Sync —
+        // suppress the onboarding banner from now on across all devices.
+        markWelcomeSeen();
       }
     } catch (e) {
       showToast('Sign-in failed');
@@ -1469,6 +1472,57 @@
 
   // Refresh the sidebar dot on load so the user sees connection state at a glance.
   refreshCloudSyncUI();
+
+  // ── Onboarding banner ──────────────────────────────────────────────────────
+  //
+  // Shown once to a brand-new user under the topbar to point them at Cloud
+  // Sync. Suppression is persisted in tagmark_settings.welcomeSeen so it
+  // roams with the rest of the user's settings and never reappears once
+  // dismissed, set up, or marked seen during the install/update flow.
+
+  const onboardingBanner    = $('onboardingBanner');
+  const onboardingSetupBtn  = $('onboardingSetupBtn');
+  const onboardingDismissBtn = $('onboardingDismissBtn');
+
+  async function markWelcomeSeen() {
+    onboardingBanner.hidden = true;
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'save-settings',
+        settings: { welcomeSeen: true }
+      });
+    } catch { /* best-effort: even if the write fails, banner stays hidden this session */ }
+  }
+
+  async function maybeShowOnboardingBanner() {
+    try {
+      const settings = await chrome.runtime.sendMessage({ action: 'get-settings' });
+      if (settings && settings.welcomeSeen) return;
+      onboardingBanner.hidden = false;
+    } catch { /* missing/failed settings → leave banner hidden */ }
+  }
+
+  onboardingSetupBtn.addEventListener('click', () => {
+    openCloudSyncModal();
+    // Don't mark seen yet — wait for an actual successful connect, so a user
+    // who closes the modal still sees the banner next time.
+  });
+
+  onboardingDismissBtn.addEventListener('click', markWelcomeSeen);
+
+  maybeShowOnboardingBanner();
+
+  // ── Deep-link: #cloud-sync auto-opens the Cloud Sync modal ────────────────
+  //
+  // The welcome page links to dashboard.html#cloud-sync so first-run users
+  // land directly in the sync flow. We also handle later in-page navigation
+  // via the hashchange event for parity.
+
+  function maybeOpenCloudSyncFromHash() {
+    if (location.hash === '#cloud-sync') openCloudSyncModal();
+  }
+  maybeOpenCloudSyncFromHash();
+  window.addEventListener('hashchange', maybeOpenCloudSyncFromHash);
 
   // ── Boot ───────────────────────────────────────────────────────────────────
 

@@ -1683,6 +1683,66 @@ body {
 [data-theme="dark"] .type-chip.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-chip.type-try     { background: #1c1500; color: #fde68a; }
 
+/* ── Onboarding banner ─────────────────────────────────── */
+
+.onboarding-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  background: var(--accent-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.onboarding-banner[hidden] { display: none; }
+
+.onboarding-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.onboarding-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.onboarding-setup {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.onboarding-dismiss {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+}
+
+.onboarding-dismiss:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.onboarding-dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* ── Cloud Sync ────────────────────────────────────────── */
 
 .cloud-sync-dot {

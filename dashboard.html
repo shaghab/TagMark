@@ -167,6 +167,23 @@
       </div>
     </div>
 
+    <!-- Onboarding banner (first-run prompt to set up Cloud Sync) -->
+    <div class="onboarding-banner" id="onboardingBanner" hidden>
+      <svg class="onboarding-icon" viewBox="0 0 24 24" fill="none">
+        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="onboarding-text">
+        Want your bookmarks to survive a browser reset or roam across devices? Back them up to your own Google Drive.
+      </span>
+      <button class="btn btn-primary onboarding-setup" id="onboardingSetupBtn">Set up Drive sync</button>
+      <button class="onboarding-dismiss" id="onboardingDismissBtn" aria-label="Dismiss">
+        <svg viewBox="0 0 24 24" fill="none">
+          <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
     <!-- Active tag filters row -->
     <div class="active-filters" id="activeFilters" style="display:none">
       <span class="filter-label">Filtering by:</span>
