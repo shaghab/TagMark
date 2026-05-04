@@ -10,6 +10,13 @@ const FOLDERS_KEY  = 'tagmark_folders';  // array of folder objects
 
 const MAX_FOLDER_NAME_LEN = 100;
 
+// Load the Google Drive sync module. Guarded so unit tests (which run this
+// file under Node's vm without `importScripts`) don't break.
+if (typeof importScripts === 'function') {
+  try { importScripts('gdrive.js'); }
+  catch (err) { console.warn('[TagMark] gdrive.js could not be loaded:', err && err.message); }
+}
+
 const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
 // ── Context Menu Setup ──────────────────────────────────────────────────────
@@ -550,13 +557,50 @@ async function handleMessage(message) {
 
     case 'save-settings': {
       // Only persist recognised theme values; reject arbitrary objects (A08).
+      // The driveSync sub-object is preserved verbatim so a UI write to theme
+      // doesn't clobber the user's sync configuration.
       const VALID_THEMES = ['light', 'dark'];
       const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
         ? message.settings.theme
         : 'light';
-      await storageSet({ [SETTINGS_KEY]: { theme } });
+      const current = (await storageGet([SETTINGS_KEY]))[SETTINGS_KEY] || {};
+      await storageSet({ [SETTINGS_KEY]: { ...current, theme } });
       return { success: true };
     }
+
+    // ── Google Drive sync ────────────────────────────────────────────────
+    // Each handler is guarded so tests (which run without gdrive.js loaded)
+    // cleanly return an error rather than ReferenceError.
+
+    case 'gdrive-status':
+      if (typeof gdriveStatus !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveStatus(); }
+      catch (err) { return { error: err.message || 'Drive status failed' }; }
+
+    case 'gdrive-connect':
+      if (typeof gdriveConnect !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveConnect(); }
+      catch (err) { return { error: err.message || 'Drive sign-in failed' }; }
+
+    case 'gdrive-disconnect':
+      if (typeof gdriveDisconnect !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveDisconnect(); }
+      catch (err) { return { error: err.message || 'Drive sign-out failed' }; }
+
+    case 'gdrive-backup':
+      if (typeof gdriveBackup !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveBackup(); }
+      catch (err) { return { error: err.message || 'Drive backup failed' }; }
+
+    case 'gdrive-restore':
+      if (typeof gdriveRestore !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveRestore(); }
+      catch (err) { return { error: err.message || 'Drive restore failed' }; }
+
+    case 'gdrive-set-auto':
+      if (typeof gdriveSetAutoSync !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveSetAutoSync(!!message.enabled); }
+      catch (err) { return { error: err.message || 'Could not change auto-sync' }; }
 
     default:
       return { error: 'Unknown action' };

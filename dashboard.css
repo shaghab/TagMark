@@ -1682,3 +1682,112 @@ body {
 [data-theme="dark"] .type-chip.type-listen  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-chip.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-chip.type-try     { background: #1c1500; color: #fde68a; }
+
+/* ── Cloud Sync ────────────────────────────────────────── */
+
+.cloud-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+
+.cloud-sync-dot.connected { background: var(--success); }
+.cloud-sync-dot.error     { background: var(--danger); }
+
+.cloud-sync-modal {
+  max-width: 480px;
+}
+
+.cloud-sync-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cloud-sync-intro {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.cloud-sync-status {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cloud-sync-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.cloud-sync-status-label {
+  color: var(--text-secondary);
+}
+
+.cloud-sync-status-value {
+  color: var(--text);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.cloud-sync-status-value.cloud-sync-error {
+  color: var(--danger);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.cloud-sync-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-sync-actions {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.cloud-sync-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.cloud-sync-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.cloud-sync-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cloud-sync-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.cloud-sync-help {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}

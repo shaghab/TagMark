@@ -99,6 +99,13 @@
         </svg>
         Export JSON
       </button>
+      <button class="icon-text-btn" id="cloudSyncBtn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Cloud Sync
+        <span class="cloud-sync-dot" id="cloudSyncDot" title="Not connected"></span>
+      </button>
       <button class="icon-text-btn theme-btn" id="themeToggle">
         <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.75"/>
@@ -317,6 +324,92 @@
 
   <!-- Hidden file input for import -->
   <input type="file" id="importFileInput" accept=".json" style="display:none">
+
+  <!-- Cloud Sync modal -->
+  <div class="modal-overlay" id="cloudSyncModalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cloudSyncModalTitle">
+    <div class="modal cloud-sync-modal" id="cloudSyncModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="cloudSyncModalTitle">Google Drive Sync</h2>
+        <button class="icon-btn" id="closeCloudSyncModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-form cloud-sync-body">
+
+        <p class="cloud-sync-intro">
+          Back up your bookmarks, folders, and settings to a private file in your own
+          Google Drive — useful when you're approaching the chrome.storage.sync quota
+          or want a portable backup across browsers.
+        </p>
+
+        <!-- Status block -->
+        <div class="cloud-sync-status" id="cloudSyncStatus">
+          <div class="cloud-sync-status-row">
+            <span class="cloud-sync-status-label">Status</span>
+            <span class="cloud-sync-status-value" id="cloudSyncStateLabel">Not connected</span>
+          </div>
+          <div class="cloud-sync-status-row">
+            <span class="cloud-sync-status-label">Last backup</span>
+            <span class="cloud-sync-status-value" id="cloudSyncLastSync">Never</span>
+          </div>
+          <div class="cloud-sync-status-row" id="cloudSyncErrorRow" style="display:none">
+            <span class="cloud-sync-status-label">Last error</span>
+            <span class="cloud-sync-status-value cloud-sync-error" id="cloudSyncError"></span>
+          </div>
+        </div>
+
+        <!-- Connect / disconnect -->
+        <div class="cloud-sync-section">
+          <button type="button" class="btn btn-primary cloud-sync-action" id="cloudConnectBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Connect Google Drive
+          </button>
+          <button type="button" class="btn btn-ghost cloud-sync-action" id="cloudDisconnectBtn" style="display:none">
+            Sign out of Google Drive
+          </button>
+        </div>
+
+        <!-- Backup / restore -->
+        <div class="cloud-sync-section cloud-sync-actions" id="cloudSyncActions" style="display:none">
+          <button type="button" class="btn btn-primary" id="cloudBackupBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              <polyline points="17,8 12,3 7,8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+            Back up now
+          </button>
+          <button type="button" class="btn btn-ghost" id="cloudRestoreBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              <polyline points="17,12 12,17 7,12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="12" y1="3" x2="12" y2="17" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+            Restore from Drive
+          </button>
+        </div>
+
+        <!-- Auto-sync -->
+        <div class="cloud-sync-section cloud-sync-auto" id="cloudSyncAuto" style="display:none">
+          <label class="cloud-sync-toggle">
+            <input type="checkbox" id="cloudAutoSyncToggle">
+            <span class="cloud-sync-toggle-label">Automatically back up every 30 minutes</span>
+          </label>
+          <p class="cloud-sync-help">
+            Backups overwrite the same file in Drive. Restoring replaces all local
+            bookmarks and folders with the contents of the backup.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <script src="shared.js"></script>
   <script src="dashboard.js"></script>

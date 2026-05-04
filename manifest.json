@@ -10,8 +10,17 @@
     "storage",
     "tabs",
     "contextMenus",
-    "activeTab"
+    "activeTab",
+    "identity",
+    "alarms"
   ],
+
+  "oauth2": {
+    "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  },
 
   "background": {
     "service_worker": "background.js"
@@ -38,7 +47,7 @@
   "chrome_url_overrides": {},
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; connect-src 'none'; img-src 'self' https://www.google.com; frame-ancestors 'none'; form-action 'none';"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com; img-src 'self' https://www.google.com; frame-ancestors 'none'; form-action 'none';"
   },
 
   "web_accessible_resources": []

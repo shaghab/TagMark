@@ -1292,6 +1292,184 @@
     toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
   }
 
+  // ── Cloud Sync (Google Drive) ──────────────────────────────────────────────
+
+  const cloudSyncBtn         = $('cloudSyncBtn');
+  const cloudSyncDot         = $('cloudSyncDot');
+  const cloudSyncModalOver   = $('cloudSyncModalOverlay');
+  const closeCloudSyncModal  = $('closeCloudSyncModal');
+  const cloudConnectBtn      = $('cloudConnectBtn');
+  const cloudDisconnectBtn   = $('cloudDisconnectBtn');
+  const cloudBackupBtn       = $('cloudBackupBtn');
+  const cloudRestoreBtn      = $('cloudRestoreBtn');
+  const cloudSyncActions     = $('cloudSyncActions');
+  const cloudSyncAuto        = $('cloudSyncAuto');
+  const cloudAutoSyncToggle  = $('cloudAutoSyncToggle');
+  const cloudSyncStateLabel  = $('cloudSyncStateLabel');
+  const cloudSyncLastSync    = $('cloudSyncLastSync');
+  const cloudSyncErrorRow    = $('cloudSyncErrorRow');
+  const cloudSyncError       = $('cloudSyncError');
+
+  function openCloudSyncModal() {
+    cloudSyncModalOver.style.display = 'flex';
+    refreshCloudSyncUI();
+  }
+
+  function closeCloudSyncModalFn() {
+    cloudSyncModalOver.style.display = 'none';
+  }
+
+  cloudSyncBtn.addEventListener('click', openCloudSyncModal);
+  closeCloudSyncModal.addEventListener('click', closeCloudSyncModalFn);
+  cloudSyncModalOver.addEventListener('click', e => {
+    if (e.target === cloudSyncModalOver) closeCloudSyncModalFn();
+  });
+
+  function setCloudButtonsEnabled(enabled) {
+    [cloudConnectBtn, cloudDisconnectBtn, cloudBackupBtn, cloudRestoreBtn, cloudAutoSyncToggle]
+      .forEach(el => { if (el) el.disabled = !enabled; });
+  }
+
+  // Format a "Last backup" timestamp, falling back to "Never" when 0/missing.
+  function formatSyncTime(ts) {
+    if (!ts) return 'Never';
+    return formatDate(ts);
+  }
+
+  async function refreshCloudSyncUI() {
+    let status;
+    try {
+      status = await chrome.runtime.sendMessage({ action: 'gdrive-status' });
+    } catch {
+      status = null;
+    }
+    if (!status || status.error) {
+      cloudSyncDot.classList.remove('connected', 'error');
+      cloudSyncDot.title = 'Not connected';
+      cloudSyncStateLabel.textContent = status && status.error ? status.error : 'Drive sync unavailable';
+      cloudSyncLastSync.textContent = '—';
+      cloudSyncErrorRow.style.display = 'none';
+      cloudConnectBtn.style.display    = '';
+      cloudDisconnectBtn.style.display = 'none';
+      cloudSyncActions.style.display   = 'none';
+      cloudSyncAuto.style.display      = 'none';
+      return;
+    }
+
+    const connected = status.enabled && status.signedIn;
+    cloudSyncDot.classList.toggle('connected', connected);
+    cloudSyncDot.classList.toggle('error', status.lastSyncStatus === 'error');
+    cloudSyncDot.title = connected ? 'Connected to Google Drive' : 'Not connected';
+
+    cloudSyncStateLabel.textContent = connected
+      ? 'Connected'
+      : (status.enabled ? 'Sign-in expired — reconnect' : 'Not connected');
+    cloudSyncLastSync.textContent = formatSyncTime(status.lastSyncAt);
+
+    if (status.lastSyncStatus === 'error' && status.lastError) {
+      cloudSyncErrorRow.style.display = '';
+      cloudSyncError.textContent = status.lastError;
+    } else {
+      cloudSyncErrorRow.style.display = 'none';
+    }
+
+    cloudConnectBtn.style.display    = connected ? 'none' : '';
+    cloudDisconnectBtn.style.display = connected ? '' : 'none';
+    cloudSyncActions.style.display   = connected ? 'flex' : 'none';
+    cloudSyncAuto.style.display      = connected ? 'flex' : 'none';
+    cloudAutoSyncToggle.checked      = !!status.autoSync;
+  }
+
+  cloudConnectBtn.addEventListener('click', async () => {
+    setCloudButtonsEnabled(false);
+    cloudSyncStateLabel.textContent = 'Signing in…';
+    try {
+      const res = await chrome.runtime.sendMessage({ action: 'gdrive-connect' });
+      if (res && res.error) {
+        showToast(`Sign-in failed: ${res.error}`);
+      } else {
+        showToast('Connected to Google Drive');
+      }
+    } catch (e) {
+      showToast('Sign-in failed');
+    } finally {
+      setCloudButtonsEnabled(true);
+      refreshCloudSyncUI();
+    }
+  });
+
+  cloudDisconnectBtn.addEventListener('click', async () => {
+    setCloudButtonsEnabled(false);
+    try {
+      await chrome.runtime.sendMessage({ action: 'gdrive-disconnect' });
+      showToast('Disconnected from Google Drive');
+    } catch {
+      showToast('Sign-out failed');
+    } finally {
+      setCloudButtonsEnabled(true);
+      refreshCloudSyncUI();
+    }
+  });
+
+  cloudBackupBtn.addEventListener('click', async () => {
+    setCloudButtonsEnabled(false);
+    cloudSyncStateLabel.textContent = 'Backing up…';
+    try {
+      const res = await chrome.runtime.sendMessage({ action: 'gdrive-backup' });
+      if (res && res.error) {
+        showToast(`Backup failed: ${res.error}`);
+      } else {
+        showToast(`Backed up ${res.bookmarks} bookmarks to Drive`);
+      }
+    } catch {
+      showToast('Backup failed');
+    } finally {
+      setCloudButtonsEnabled(true);
+      refreshCloudSyncUI();
+    }
+  });
+
+  cloudRestoreBtn.addEventListener('click', async () => {
+    if (!confirm('Restore will replace all current bookmarks and folders with the backup from Drive. Continue?')) {
+      return;
+    }
+    setCloudButtonsEnabled(false);
+    cloudSyncStateLabel.textContent = 'Restoring…';
+    try {
+      const res = await chrome.runtime.sendMessage({ action: 'gdrive-restore' });
+      if (res && res.error) {
+        showToast(`Restore failed: ${res.error}`);
+      } else {
+        showToast(`Restored ${res.bookmarks} bookmarks from Drive`);
+        await loadBookmarks();
+      }
+    } catch {
+      showToast('Restore failed');
+    } finally {
+      setCloudButtonsEnabled(true);
+      refreshCloudSyncUI();
+    }
+  });
+
+  cloudAutoSyncToggle.addEventListener('change', async () => {
+    const enabled = cloudAutoSyncToggle.checked;
+    try {
+      const res = await chrome.runtime.sendMessage({ action: 'gdrive-set-auto', enabled });
+      if (res && res.error) {
+        showToast(`Could not change auto-sync: ${res.error}`);
+        cloudAutoSyncToggle.checked = !enabled;
+      } else {
+        showToast(enabled ? 'Auto-sync enabled' : 'Auto-sync disabled');
+      }
+    } catch {
+      cloudAutoSyncToggle.checked = !enabled;
+    }
+    refreshCloudSyncUI();
+  });
+
+  // Refresh the sidebar dot on load so the user sees connection state at a glance.
+  refreshCloudSyncUI();
+
   // ── Boot ───────────────────────────────────────────────────────────────────
 
   applyTheme(getTheme());
