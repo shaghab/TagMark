@@ -10,11 +10,18 @@ const FOLDERS_KEY  = 'tagmark_folders';  // array of folder objects
 
 const MAX_FOLDER_NAME_LEN = 100;
 
+// Load the Google Drive sync module. Guarded so unit tests (which run this
+// file under Node's vm without `importScripts`) don't break.
+if (typeof importScripts === 'function') {
+  try { importScripts('gdrive.js'); }
+  catch (err) { console.warn('[TagMark] gdrive.js could not be loaded:', err && err.message); }
+}
+
 const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
 // ── Context Menu Setup ──────────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(details => {
   chrome.contextMenus.create({
     id: 'tagmark-save-page',
     title: 'Save to TagMark',
@@ -26,6 +33,22 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Save link to TagMark',
     contexts: ['link']
   });
+
+  // First-run onboarding.
+  // - 'install' → open the welcome page in a new tab so users discover the
+  //   extension's features (and Cloud Sync) immediately.
+  // - 'update'  → silently mark welcomeSeen so existing users aren't
+  //   prompted by the dashboard onboarding banner on their first reopen of
+  //   the upgraded build.
+  if (details && details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }).catch(() => {});
+  } else if (details && details.reason === 'update') {
+    storageGet([SETTINGS_KEY]).then(result => {
+      const current = result[SETTINGS_KEY] || {};
+      if (current.welcomeSeen) return;
+      storageSet({ [SETTINGS_KEY]: { ...current, welcomeSeen: true } });
+    });
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -549,14 +572,79 @@ async function handleMessage(message) {
     }
 
     case 'save-settings': {
-      // Only persist recognised theme values; reject arbitrary objects (A08).
+      // Allowlist recognised settings; reject anything else (A08).
+      // Each field is only mutated if the caller included it, so a UI write
+      // to one setting doesn't clobber the user's sync configuration or
+      // unrelated fields.
       const VALID_THEMES = ['light', 'dark'];
-      const theme = message.settings && VALID_THEMES.includes(message.settings.theme)
-        ? message.settings.theme
-        : 'light';
-      await storageSet({ [SETTINGS_KEY]: { theme } });
+      const incoming = message.settings || {};
+      const current = (await storageGet([SETTINGS_KEY]))[SETTINGS_KEY] || {};
+      const next = { ...current };
+
+      if ('theme' in incoming) {
+        // Invalid values fall back to the safe default rather than persisting
+        // arbitrary strings.
+        next.theme = VALID_THEMES.includes(incoming.theme) ? incoming.theme : 'light';
+      } else if (next.theme === undefined) {
+        next.theme = 'light';
+      }
+
+      if ('welcomeSeen' in incoming) {
+        next.welcomeSeen = !!incoming.welcomeSeen;
+      }
+
+      await storageSet({ [SETTINGS_KEY]: next });
       return { success: true };
     }
+
+    // ── Google Drive sync ────────────────────────────────────────────────
+    // Each handler is guarded so tests (which run without gdrive.js loaded)
+    // cleanly return an error rather than ReferenceError. Mutating actions
+    // additionally short-circuit when the OAuth client_id placeholder hasn't
+    // been swapped for a real one — we'd rather surface a clear "not
+    // configured" message than let the user hit a cryptic OAuth failure.
+
+    case 'gdrive-status':
+      if (typeof gdriveStatus !== 'function') return { error: 'Drive sync unavailable', configured: false };
+      try { return await gdriveStatus(); }
+      catch (err) { return { error: err.message || 'Drive status failed', configured: false }; }
+
+    case 'gdrive-connect':
+      if (typeof gdriveConnect !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
+      try { return await gdriveConnect(); }
+      catch (err) { return { error: err.message || 'Drive sign-in failed' }; }
+
+    case 'gdrive-disconnect':
+      if (typeof gdriveDisconnect !== 'function') return { error: 'Drive sync unavailable' };
+      try { return await gdriveDisconnect(); }
+      catch (err) { return { error: err.message || 'Drive sign-out failed' }; }
+
+    case 'gdrive-backup':
+      if (typeof gdriveBackup !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
+      try { return await gdriveBackup(); }
+      catch (err) { return { error: err.message || 'Drive backup failed' }; }
+
+    case 'gdrive-restore':
+      if (typeof gdriveRestore !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
+      try { return await gdriveRestore(); }
+      catch (err) { return { error: err.message || 'Drive restore failed' }; }
+
+    case 'gdrive-set-auto':
+      if (typeof gdriveSetAutoSync !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
+      try { return await gdriveSetAutoSync(!!message.enabled); }
+      catch (err) { return { error: err.message || 'Could not change auto-sync' }; }
 
     default:
       return { error: 'Unknown action' };
