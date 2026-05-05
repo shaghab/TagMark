@@ -69,6 +69,26 @@ async function setDriveState(patch) {
   return next;
 }
 
+// ── Configuration check ──────────────────────────────────────────────────────
+//
+// The OAuth client_id ships in manifest.json. Public/fork builds may still
+// carry the placeholder string, which would let users click "Connect Google
+// Drive" only to hit a confusing OAuth failure. Detect that case at runtime
+// so the dashboard can hide the Cloud Sync UI entirely until a publisher
+// swaps in a real client_id.
+
+function isGdriveConfigured() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const id = manifest && manifest.oauth2 && manifest.oauth2.client_id;
+    if (typeof id !== 'string' || !id) return false;
+    if (id.startsWith('REPLACE_WITH_')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── OAuth ────────────────────────────────────────────────────────────────────
 
 function getAuthToken(interactive) {
@@ -330,9 +350,12 @@ async function gdriveDisconnect() {
 }
 
 async function gdriveStatus() {
+  const configured = isGdriveConfigured();
   const state = await getDriveState();
+  // When the build hasn't been wired to a real OAuth client yet, skip the
+  // identity probe — it would fail noisily and slow down the UI for nothing.
   let signedIn = false;
-  if (state.enabled) {
+  if (configured && state.enabled) {
     try {
       const token = await getAuthToken(false);
       signedIn = !!token;
@@ -340,7 +363,7 @@ async function gdriveStatus() {
       signedIn = false;
     }
   }
-  return { ...state, signedIn };
+  return { ...state, configured, signedIn };
 }
 
 async function gdriveBackup() {

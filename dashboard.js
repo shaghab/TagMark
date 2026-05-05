@@ -1309,6 +1309,12 @@
   const cloudSyncLastSync    = $('cloudSyncLastSync');
   const cloudSyncErrorRow    = $('cloudSyncErrorRow');
   const cloudSyncError       = $('cloudSyncError');
+  // Hoisted up here (rather than declared next to the rest of the
+  // onboarding logic below) so refreshCloudSyncUI can reference it on its
+  // first synchronous boot call without hitting the TDZ.
+  const onboardingBanner     = $('onboardingBanner');
+  const onboardingSetupBtn   = $('onboardingSetupBtn');
+  const onboardingDismissBtn = $('onboardingDismissBtn');
 
   function openCloudSyncModal() {
     cloudSyncModalOver.style.display = 'flex';
@@ -1343,6 +1349,18 @@
     } catch {
       status = null;
     }
+    // When the build doesn't ship a real OAuth client_id, hide every entry
+    // point to Cloud Sync rather than showing buttons that would always fail.
+    // The publisher swapping in a real ID makes the UI reappear automatically
+    // on the next dashboard load — no code change needed to "turn it on".
+    if (status && status.configured === false) {
+      cloudSyncBtn.hidden = true;
+      onboardingBanner.hidden = true;
+      cloudSyncModalOver.style.display = 'none';
+      return;
+    }
+    cloudSyncBtn.hidden = false;
+
     if (!status || status.error) {
       cloudSyncDot.classList.remove('connected', 'error');
       cloudSyncDot.title = 'Not connected';
@@ -1479,10 +1497,7 @@
   // Sync. Suppression is persisted in tagmark_settings.welcomeSeen so it
   // roams with the rest of the user's settings and never reappears once
   // dismissed, set up, or marked seen during the install/update flow.
-
-  const onboardingBanner    = $('onboardingBanner');
-  const onboardingSetupBtn  = $('onboardingSetupBtn');
-  const onboardingDismissBtn = $('onboardingDismissBtn');
+  // (DOM refs for the banner are hoisted into the main DOM-ref block above.)
 
   async function markWelcomeSeen() {
     onboardingBanner.hidden = true;
@@ -1496,6 +1511,10 @@
 
   async function maybeShowOnboardingBanner() {
     try {
+      // Skip the prompt when the build doesn't have a real OAuth client_id,
+      // since the only CTA leads to a flow that would always fail.
+      const status = await chrome.runtime.sendMessage({ action: 'gdrive-status' });
+      if (status && status.configured === false) return;
       const settings = await chrome.runtime.sendMessage({ action: 'get-settings' });
       if (settings && settings.welcomeSeen) return;
       onboardingBanner.hidden = false;
@@ -1518,8 +1537,16 @@
   // land directly in the sync flow. We also handle later in-page navigation
   // via the hashchange event for parity.
 
-  function maybeOpenCloudSyncFromHash() {
-    if (location.hash === '#cloud-sync') openCloudSyncModal();
+  async function maybeOpenCloudSyncFromHash() {
+    if (location.hash !== '#cloud-sync') return;
+    // Don't auto-open the modal if the build can't actually sign in — the
+    // Cloud Sync entry points are hidden in that case, so opening the modal
+    // would feel inconsistent.
+    try {
+      const status = await chrome.runtime.sendMessage({ action: 'gdrive-status' });
+      if (status && status.configured === false) return;
+    } catch { /* fall through and open the modal */ }
+    openCloudSyncModal();
   }
   maybeOpenCloudSyncFromHash();
   window.addEventListener('hashchange', maybeOpenCloudSyncFromHash);

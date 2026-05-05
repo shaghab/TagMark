@@ -599,15 +599,21 @@ async function handleMessage(message) {
 
     // ── Google Drive sync ────────────────────────────────────────────────
     // Each handler is guarded so tests (which run without gdrive.js loaded)
-    // cleanly return an error rather than ReferenceError.
+    // cleanly return an error rather than ReferenceError. Mutating actions
+    // additionally short-circuit when the OAuth client_id placeholder hasn't
+    // been swapped for a real one — we'd rather surface a clear "not
+    // configured" message than let the user hit a cryptic OAuth failure.
 
     case 'gdrive-status':
-      if (typeof gdriveStatus !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof gdriveStatus !== 'function') return { error: 'Drive sync unavailable', configured: false };
       try { return await gdriveStatus(); }
-      catch (err) { return { error: err.message || 'Drive status failed' }; }
+      catch (err) { return { error: err.message || 'Drive status failed', configured: false }; }
 
     case 'gdrive-connect':
       if (typeof gdriveConnect !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
       try { return await gdriveConnect(); }
       catch (err) { return { error: err.message || 'Drive sign-in failed' }; }
 
@@ -618,16 +624,25 @@ async function handleMessage(message) {
 
     case 'gdrive-backup':
       if (typeof gdriveBackup !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
       try { return await gdriveBackup(); }
       catch (err) { return { error: err.message || 'Drive backup failed' }; }
 
     case 'gdrive-restore':
       if (typeof gdriveRestore !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
       try { return await gdriveRestore(); }
       catch (err) { return { error: err.message || 'Drive restore failed' }; }
 
     case 'gdrive-set-auto':
       if (typeof gdriveSetAutoSync !== 'function') return { error: 'Drive sync unavailable' };
+      if (typeof isGdriveConfigured === 'function' && !isGdriveConfigured()) {
+        return { error: 'Drive sync is not configured in this build' };
+      }
       try { return await gdriveSetAutoSync(!!message.enabled); }
       catch (err) { return { error: err.message || 'Could not change auto-sync' }; }
 
