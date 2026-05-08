@@ -12,6 +12,103 @@ const MAX_FOLDER_NAME_LEN = 100;
 
 const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
+// ── Toolbar Icon ─────────────────────────────────────────────────────────────
+
+const DEFAULT_ICON_PATHS = {
+  16: 'icons/icon16.png',
+  32: 'icons/icon32.png',
+  48: 'icons/icon48.png',
+  128: 'icons/icon128.png'
+};
+
+// Draws the TagMark icon at the given pixel size.
+// bookmarked=true → green background (#22c55e); false → indigo (#6366f1).
+function drawBookmarkIcon(size, bookmarked) {
+  const canvas = new OffscreenCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+  const s = size / 128;
+
+  // Rounded-rect background
+  const r = 28 * s;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(size - r, 0);
+  ctx.arcTo(size, 0, size, r, r);
+  ctx.lineTo(size, size - r);
+  ctx.arcTo(size, size, size - r, size, r);
+  ctx.lineTo(r, size);
+  ctx.arcTo(0, size, 0, size - r, r);
+  ctx.lineTo(0, r);
+  ctx.arcTo(0, 0, r, 0, r);
+  ctx.closePath();
+  ctx.fillStyle = bookmarked ? '#22c55e' : '#6366f1';
+  ctx.fill();
+
+  // Bookmark ribbon — mirrors the SVG path M84 24H44a8 8 … z
+  ctx.beginPath();
+  ctx.moveTo(84 * s, 24 * s);
+  ctx.lineTo(44 * s, 24 * s);
+  ctx.arcTo(36 * s, 24 * s, 36 * s, 32 * s, 8 * s);
+  ctx.lineTo(36 * s, 100 * s);
+  ctx.lineTo(64 * s, 82 * s);
+  ctx.lineTo(92 * s, 100 * s);
+  ctx.lineTo(92 * s, 32 * s);
+  ctx.arcTo(92 * s, 24 * s, 84 * s, 24 * s, 8 * s);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.fill();
+
+  // Tag dot
+  ctx.beginPath();
+  ctx.arc(64 * s, 52 * s, 8 * s, 0, Math.PI * 2);
+  ctx.fillStyle = bookmarked ? '#22c55e' : '#6366f1';
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function setTabIcon(tabId, isBookmarked) {
+  if (isBookmarked) {
+    const imageData = {};
+    for (const size of [16, 32, 48, 128]) {
+      imageData[size] = drawBookmarkIcon(size, true);
+    }
+    chrome.action.setIcon({ tabId, imageData }).catch(() => {});
+  } else {
+    chrome.action.setIcon({ tabId, path: DEFAULT_ICON_PATHS }).catch(() => {});
+  }
+}
+
+// After a bookmark is saved or deleted, update all open tabs at that URL.
+async function refreshIconForUrl(url, isBookmarked) {
+  if (!isValidUrl(url)) return;
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id && tab.url === url) {
+      setTabIcon(tab.id, isBookmarked);
+    }
+  }
+}
+
+// When the user switches tabs or navigates, sync the icon to bookmark state.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || !isValidUrl(tab.url)) return;
+    const bookmarks = await getBookmarks();
+    setTabIcon(tabId, bookmarks.some(b => b.url === tab.url));
+  } catch {}
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return;
+  if (!tab.url || !isValidUrl(tab.url)) return;
+  try {
+    const bookmarks = await getBookmarks();
+    setTabIcon(tabId, bookmarks.some(b => b.url === tab.url));
+  } catch {}
+});
+
 // ── Context Menu Setup ──────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -54,6 +151,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   // Notify any open dashboard tabs
   notifyDashboard('bookmark-added');
+
+  // Update toolbar icon for the saved tab
+  setTabIcon(tab.id, true);
 
   // Show badge briefly
   chrome.action.setBadgeText({ text: '✓', tabId: tab.id });
@@ -374,14 +474,19 @@ async function handleMessage(message) {
     case 'get-bookmarks':
       return await getBookmarks();
 
-    case 'save-bookmark':
-      return await saveBookmark(message.bookmark);
+    case 'save-bookmark': {
+      const saved = await saveBookmark(message.bookmark);
+      await refreshIconForUrl(saved.url, true);
+      return saved;
+    }
 
     case 'delete-bookmark': {
       const bookmarks = await getBookmarks();
+      const deletedUrl = bookmarks.find(b => b.id === message.id)?.url;
       const filtered = bookmarks.filter(b => b.id !== message.id);
       await saveBookmarks(filtered);
       notifyDashboard('bookmark-deleted');
+      if (deletedUrl) await refreshIconForUrl(deletedUrl, false);
       return { success: true };
     }
 
@@ -562,3 +667,18 @@ async function handleMessage(message) {
       return { error: 'Unknown action' };
   }
 }
+
+// ── Startup Icon Sync ────────────────────────────────────────────────────────
+// On service worker activation, update icons for all currently open tabs so
+// already-bookmarked pages show the green icon without needing a navigation.
+(async () => {
+  try {
+    const [bookmarks, tabs] = await Promise.all([getBookmarks(), chrome.tabs.query({})]);
+    const bookmarkedUrls = new Set(bookmarks.map(b => b.url));
+    for (const tab of tabs) {
+      if (tab.id && tab.url) {
+        setTabIcon(tab.id, bookmarkedUrls.has(tab.url));
+      }
+    }
+  } catch {}
+})();
