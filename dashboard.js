@@ -885,7 +885,24 @@
       btn.addEventListener('click', e => { e.preventDefault(); openEditModal(btn.dataset.id); });
     });
     bookmarkGrid.querySelectorAll('.card-delete-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.preventDefault(); deleteBookmark(btn.dataset.id); });
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        if (!btn.dataset.confirming) {
+          btn.dataset.confirming = '1';
+          btn.classList.add('card-delete-btn-armed');
+          btn.title = 'Click again to confirm';
+          btn._confirmTimer = setTimeout(() => {
+            delete btn.dataset.confirming;
+            btn.classList.remove('card-delete-btn-armed');
+            btn.title = 'Delete';
+          }, 3000);
+          return;
+        }
+        clearTimeout(btn._confirmTimer);
+        delete btn.dataset.confirming;
+        btn.classList.remove('card-delete-btn-armed');
+        deleteBookmark(btn.dataset.id);
+      });
     });
     bookmarkGrid.querySelectorAll('.card-tag').forEach(chip => {
       chip.addEventListener('click', () => {

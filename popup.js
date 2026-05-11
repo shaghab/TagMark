@@ -212,6 +212,22 @@
 
   deleteBtn.addEventListener('click', async () => {
     if (!existingBookmark) return;
+
+    if (!deleteBtn.dataset.confirming) {
+      deleteBtn.dataset.confirming = '1';
+      const origText = deleteBtn.textContent;
+      deleteBtn.textContent = 'Sure? (click again)';
+      deleteBtn.classList.add('btn-danger-armed');
+      deleteBtn._confirmTimer = setTimeout(() => {
+        delete deleteBtn.dataset.confirming;
+        deleteBtn.textContent = origText;
+        deleteBtn.classList.remove('btn-danger-armed');
+      }, 3000);
+      return;
+    }
+
+    clearTimeout(deleteBtn._confirmTimer);
+    delete deleteBtn.dataset.confirming;
     deleteBtn.disabled = true;
     try {
       await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
