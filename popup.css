@@ -545,6 +545,11 @@ body {
   color: #fff;
 }
 
+.btn-danger-armed {
+  background: var(--danger);
+  color: #fff;
+}
+
 /* ── Toast ──────────────────────────────────────────── */
 
 .toast {

@@ -859,6 +859,11 @@ body {
   color: var(--danger);
 }
 
+.card-action-btn.delete.card-delete-btn-armed {
+  background: var(--danger);
+  color: #fff;
+}
+
 /* ── Empty state ─────────────────────────────────────── */
 
 .empty-state {
