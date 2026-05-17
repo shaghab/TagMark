@@ -190,6 +190,17 @@
       </div>
     </form>
 
+    <!-- Delete confirmation overlay -->
+    <div class="popup-confirm-overlay" id="popupConfirmOverlay" style="display:none">
+      <div class="popup-confirm-box">
+        <p class="popup-confirm-msg">Move this bookmark to Trash? You can restore it from the dashboard.</p>
+        <div class="popup-confirm-actions">
+          <button type="button" class="btn btn-ghost" id="popupConfirmCancel">Cancel</button>
+          <button type="button" class="btn btn-danger" id="popupConfirmOk">Move to Trash</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Success toast -->
     <div class="toast" id="toast" aria-live="polite"></div>
 

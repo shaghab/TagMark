@@ -210,32 +210,26 @@
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
-  deleteBtn.addEventListener('click', async () => {
+  deleteBtn.addEventListener('click', () => {
     if (!existingBookmark) return;
+    $('popupConfirmOverlay').style.display = '';
+    $('popupConfirmOk').focus();
+  });
 
-    if (!deleteBtn.dataset.confirming) {
-      deleteBtn.dataset.confirming = '1';
-      const origText = deleteBtn.textContent;
-      deleteBtn.textContent = 'Sure? (click again)';
-      deleteBtn.classList.add('btn-danger-armed');
-      deleteBtn._confirmTimer = setTimeout(() => {
-        delete deleteBtn.dataset.confirming;
-        deleteBtn.textContent = origText;
-        deleteBtn.classList.remove('btn-danger-armed');
-      }, 3000);
-      return;
-    }
+  $('popupConfirmCancel').addEventListener('click', () => {
+    $('popupConfirmOverlay').style.display = 'none';
+  });
 
-    clearTimeout(deleteBtn._confirmTimer);
-    delete deleteBtn.dataset.confirming;
-    deleteBtn.disabled = true;
+  $('popupConfirmOk').addEventListener('click', async () => {
+    $('popupConfirmOverlay').style.display = 'none';
+    $('popupConfirmOk').disabled = true;
     try {
       await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
-      showToast('Bookmark deleted.');
+      showToast('Moved to Trash.');
       setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error deleting bookmark.');
-      deleteBtn.disabled = false;
+      $('popupConfirmOk').disabled = false;
     }
   });
 
