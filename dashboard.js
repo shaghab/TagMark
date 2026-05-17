@@ -1605,6 +1605,24 @@
   $('cancelNoteEdit').addEventListener('click', closeNoteModal);
   $('noteModalOverlay').addEventListener('click', e => { if (e.target === $('noteModalOverlay')) closeNoteModal(); });
 
+  $('noteContent').addEventListener('keydown', e => {
+    if (e.key === 'F5') {
+      e.preventDefault();
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const el = $('noteContent');
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const MAX = 5000;
+      const available = MAX - (el.value.length - (end - start));
+      if (available < stamp.length) return;
+      el.value = el.value.slice(0, start) + stamp + el.value.slice(end);
+      el.selectionStart = el.selectionEnd = start + stamp.length;
+      el.dispatchEvent(new Event('input'));
+    }
+  });
+
   $('noteContent').addEventListener('input', () => {
     const len = $('noteContent').value.length;
     const counter = $('noteCharCounter');
