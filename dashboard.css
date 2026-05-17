@@ -989,6 +989,22 @@ body {
   letter-spacing: 0.5px;
 }
 
+.f5-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  cursor: default;
+  vertical-align: middle;
+  letter-spacing: 0;
+  text-transform: none;
+  user-select: none;
+}
+
 .form-input {
   height: 38px;
   padding: 0 10px;
