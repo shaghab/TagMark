@@ -720,9 +720,17 @@ async function handleMessage(message) {
       const bookmarks = await getBookmarks();
       const bm = bookmarks.find(b => b.id === message.id);
       if (!bm) return { success: false };
-      const filtered = bookmarks.filter(b => b.id !== message.id);
-      await saveBookmarks(filtered);
-      await addToTrash('bookmark', bm);
+      // Write to Trash before removing from the main list so a quota-exceeded
+      // error on the trash write leaves the original bookmark intact.
+      const trashEntry = await addToTrash('bookmark', bm);
+      try {
+        const filtered = bookmarks.filter(b => b.id !== message.id);
+        await saveBookmarks(filtered);
+      } catch (err) {
+        // Roll back the trash entry so the user is not left with a duplicate.
+        await removeFromTrash(trashEntry.trashId).catch(() => {});
+        throw err;
+      }
       notifyDashboard('bookmark-deleted');
       if (bm.url) await refreshIconForUrl(bm.url, false);
       return { success: true };
@@ -919,10 +927,16 @@ async function handleMessage(message) {
     case 'delete-note': {
       const noteKey = NOTE_PREFIX + message.id;
       const stored = (await storageGet([noteKey]))[noteKey];
-      if (stored) await addToTrash('note', { ...stored, id: message.id });
-      const result = await deleteNoteById(message.id);
-      notifyDashboard('note-deleted');
-      return result;
+      let noteTrashEntry;
+      if (stored) noteTrashEntry = await addToTrash('note', { ...stored, id: message.id });
+      try {
+        const result = await deleteNoteById(message.id);
+        notifyDashboard('note-deleted');
+        return result;
+      } catch (err) {
+        if (noteTrashEntry) await removeFromTrash(noteTrashEntry.trashId).catch(() => {});
+        throw err;
+      }
     }
 
     case 'toggle-pin-note': {
@@ -961,10 +975,16 @@ async function handleMessage(message) {
     case 'delete-task': {
       const taskKey = TASK_PREFIX + message.id;
       const stored = (await storageGet([taskKey]))[taskKey];
-      if (stored) await addToTrash('task', { ...stored, id: message.id });
-      const result = await deleteTaskById(message.id);
-      notifyDashboard('task-deleted');
-      return result;
+      let taskTrashEntry;
+      if (stored) taskTrashEntry = await addToTrash('task', { ...stored, id: message.id });
+      try {
+        const result = await deleteTaskById(message.id);
+        notifyDashboard('task-deleted');
+        return result;
+      } catch (err) {
+        if (taskTrashEntry) await removeFromTrash(taskTrashEntry.trashId).catch(() => {});
+        throw err;
+      }
     }
 
     case 'toggle-pin-task': {
