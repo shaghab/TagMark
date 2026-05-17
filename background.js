@@ -8,7 +8,13 @@ const INDEX_KEY    = 'tagmark_index';     // ordered array of bookmark IDs
 const BM_PREFIX    = 'tagmark_bm_';      // per-bookmark key: tagmark_bm_<id>
 const FOLDERS_KEY  = 'tagmark_folders';  // array of folder objects
 
+const NOTE_INDEX_KEY = 'tagmark_index_note'; // ordered array of note IDs
+const NOTE_PREFIX    = 'tagmark_note_';      // per-note key: tagmark_note_<id>
+const TASK_INDEX_KEY = 'tagmark_index_task'; // ordered array of task IDs
+const TASK_PREFIX    = 'tagmark_task_';      // per-task key: tagmark_task_<id>
+
 const MAX_FOLDER_NAME_LEN = 100;
+const MAX_CONTENT_LEN     = 50000; // max note content length
 
 const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
@@ -352,6 +358,156 @@ async function saveBookmark(bookmark) {
   return newBookmark;
 }
 
+// ── Note Storage Helpers ────────────────────────────────────────────────────
+
+async function getNotes() {
+  const result = await storageGet([NOTE_INDEX_KEY]);
+  const ids = result[NOTE_INDEX_KEY];
+  if (!Array.isArray(ids) || ids.length === 0) {
+    if (!Array.isArray(ids)) await storageSet({ [NOTE_INDEX_KEY]: [] });
+    return [];
+  }
+  const noteKeys = ids.map(id => NOTE_PREFIX + id);
+  const noteResult = await storageGet(noteKeys);
+  return ids
+    .map(id => noteResult[NOTE_PREFIX + id])
+    .filter(Boolean)
+    .map(note => ({ tags: [], content: '', pinned: false, folderId: null, ...note }));
+}
+
+async function saveNote(note) {
+  const result = await storageGet([NOTE_INDEX_KEY]);
+  const ids = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+  const newNote = {
+    id: generateId(),
+    title: (typeof note.title === 'string' ? note.title.trim() : '').slice(0, MAX_TITLE_LEN) || 'Untitled',
+    content: (typeof note.content === 'string' ? note.content : '').slice(0, MAX_CONTENT_LEN),
+    tags: normalizeTags(note.tags),
+    pinned: Boolean(note.pinned),
+    folderId: typeof note.folderId === 'string' && note.folderId ? note.folderId : null,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  await storageSet({ [NOTE_INDEX_KEY]: [newNote.id, ...ids], [NOTE_PREFIX + newNote.id]: compactBookmark(newNote) });
+  return newNote;
+}
+
+async function updateNote(incoming) {
+  const noteKey = NOTE_PREFIX + incoming.id;
+  const result = await storageGet([NOTE_INDEX_KEY, noteKey]);
+  const ids = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+  if (!ids.includes(incoming.id)) return { success: false };
+  const existing = result[noteKey] || {};
+  const updated = {
+    ...existing,
+    title: typeof incoming.title === 'string'
+      ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.title || 'Untitled'
+      : (existing.title || 'Untitled'),
+    content: typeof incoming.content === 'string'
+      ? incoming.content.slice(0, MAX_CONTENT_LEN)
+      : (existing.content || ''),
+    tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : (existing.tags || [])),
+    pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : Boolean(existing.pinned),
+    folderId: typeof incoming.folderId !== 'undefined'
+      ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
+      : (existing.folderId || null),
+    updatedAt: Date.now()
+  };
+  await storageSet({ [noteKey]: compactBookmark(updated) });
+  return { success: true };
+}
+
+async function deleteNoteById(id) {
+  const result = await storageGet([NOTE_INDEX_KEY]);
+  const ids = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+  await storageSet({ [NOTE_INDEX_KEY]: ids.filter(i => i !== id) });
+  await storageRemove([NOTE_PREFIX + id]);
+  return { success: true };
+}
+
+// ── Task Storage Helpers ────────────────────────────────────────────────────
+
+async function getTasks() {
+  const result = await storageGet([TASK_INDEX_KEY]);
+  const ids = result[TASK_INDEX_KEY];
+  if (!Array.isArray(ids) || ids.length === 0) {
+    if (!Array.isArray(ids)) await storageSet({ [TASK_INDEX_KEY]: [] });
+    return [];
+  }
+  const taskKeys = ids.map(id => TASK_PREFIX + id);
+  const taskResult = await storageGet(taskKeys);
+  return ids
+    .map(id => taskResult[TASK_PREFIX + id])
+    .filter(Boolean)
+    .map(task => ({
+      tags: [], notes: '', pinned: false, folderId: null,
+      gtdStatus: null, urgency: null, importance: null,
+      ...task
+    }));
+}
+
+async function saveTask(task) {
+  const result = await storageGet([TASK_INDEX_KEY]);
+  const ids = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+  const newTask = {
+    id: generateId(),
+    title: (typeof task.title === 'string' ? task.title.trim() : '').slice(0, MAX_TITLE_LEN) || 'Untitled',
+    notes: (typeof task.notes === 'string' ? task.notes : '').slice(0, MAX_NOTES_LEN),
+    tags: normalizeTags(task.tags),
+    pinned: Boolean(task.pinned),
+    folderId: typeof task.folderId === 'string' && task.folderId ? task.folderId : null,
+    gtdStatus:   GTD_STATUSES.includes(task.gtdStatus)    ? task.gtdStatus   : null,
+    urgency:     PRIORITY_LEVELS.includes(task.urgency)    ? task.urgency    : null,
+    importance:  PRIORITY_LEVELS.includes(task.importance) ? task.importance : null,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  await storageSet({ [TASK_INDEX_KEY]: [newTask.id, ...ids], [TASK_PREFIX + newTask.id]: compactBookmark(newTask) });
+  return newTask;
+}
+
+async function updateTask(incoming) {
+  const taskKey = TASK_PREFIX + incoming.id;
+  const result = await storageGet([TASK_INDEX_KEY, taskKey]);
+  const ids = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+  if (!ids.includes(incoming.id)) return { success: false };
+  const existing = result[taskKey] || {};
+  const updated = {
+    ...existing,
+    title: typeof incoming.title === 'string'
+      ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.title || 'Untitled'
+      : (existing.title || 'Untitled'),
+    notes: typeof incoming.notes === 'string'
+      ? incoming.notes.slice(0, MAX_NOTES_LEN)
+      : (existing.notes || ''),
+    tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : (existing.tags || [])),
+    pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : Boolean(existing.pinned),
+    folderId: typeof incoming.folderId !== 'undefined'
+      ? (typeof incoming.folderId === 'string' && incoming.folderId ? incoming.folderId : null)
+      : (existing.folderId || null),
+    gtdStatus: typeof incoming.gtdStatus !== 'undefined'
+      ? (GTD_STATUSES.includes(incoming.gtdStatus) ? incoming.gtdStatus : null)
+      : (existing.gtdStatus || null),
+    urgency: typeof incoming.urgency !== 'undefined'
+      ? (PRIORITY_LEVELS.includes(incoming.urgency) ? incoming.urgency : null)
+      : (existing.urgency || null),
+    importance: typeof incoming.importance !== 'undefined'
+      ? (PRIORITY_LEVELS.includes(incoming.importance) ? incoming.importance : null)
+      : (existing.importance || null),
+    updatedAt: Date.now()
+  };
+  await storageSet({ [taskKey]: compactBookmark(updated) });
+  return { success: true };
+}
+
+async function deleteTaskById(id) {
+  const result = await storageGet([TASK_INDEX_KEY]);
+  const ids = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+  await storageSet({ [TASK_INDEX_KEY]: ids.filter(i => i !== id) });
+  await storageRemove([TASK_PREFIX + id]);
+  return { success: true };
+}
+
 function generateId() {
   // Use CSPRNG instead of Math.random() to prevent ID prediction (A02).
   const buf = new Uint32Array(2);
@@ -594,25 +750,40 @@ async function handleMessage(message) {
       };
       collectDescendants(message.id);
       await saveFolders(folders.filter(f => !toDelete.has(f.id)));
+      const now = Date.now();
       // Unassign bookmarks from deleted folders
       const bookmarks = await getBookmarks();
-      let changed = false;
+      let bmChanged = false;
       bookmarks.forEach(b => {
-        if (b.folderId && toDelete.has(b.folderId)) {
-          b.folderId = null;
-          b.updatedAt = Date.now();
-          changed = true;
+        if (b.folderId && toDelete.has(b.folderId)) { b.folderId = null; b.updatedAt = now; bmChanged = true; }
+      });
+      if (bmChanged) await saveBookmarks(bookmarks);
+      // Unassign notes from deleted folders
+      const notes = await getNotes();
+      const noteUpdates = {};
+      notes.forEach(note => {
+        if (note.folderId && toDelete.has(note.folderId)) {
+          noteUpdates[NOTE_PREFIX + note.id] = compactBookmark({ ...note, folderId: null, updatedAt: now });
         }
       });
-      if (changed) await saveBookmarks(bookmarks);
+      if (Object.keys(noteUpdates).length) await storageSet(noteUpdates);
+      // Unassign tasks from deleted folders
+      const tasks = await getTasks();
+      const taskUpdates = {};
+      tasks.forEach(task => {
+        if (task.folderId && toDelete.has(task.folderId)) {
+          taskUpdates[TASK_PREFIX + task.id] = compactBookmark({ ...task, folderId: null, updatedAt: now });
+        }
+      });
+      if (Object.keys(taskUpdates).length) await storageSet(taskUpdates);
       notifyDashboard('folders-updated');
       return { success: true };
     }
 
     case 'get-all-tags': {
-      const bookmarks = await getBookmarks();
+      const [bookmarks, notes, tasks] = await Promise.all([getBookmarks(), getNotes(), getTasks()]);
       const tagSet = new Set();
-      bookmarks.forEach(b => b.tags.forEach(t => tagSet.add(t)));
+      [...bookmarks, ...notes, ...tasks].forEach(item => (item.tags || []).forEach(t => tagSet.add(t)));
       return Array.from(tagSet).sort();
     }
 
@@ -639,6 +810,68 @@ async function handleMessage(message) {
 
     case 'export-bookmarks':
       return await getBookmarks();
+
+    case 'get-notes':
+      return await getNotes();
+
+    case 'save-note': {
+      const saved = await saveNote(message.note);
+      notifyDashboard('note-added');
+      return saved;
+    }
+
+    case 'update-note': {
+      const result = await updateNote(message.note);
+      notifyDashboard('note-updated');
+      return result;
+    }
+
+    case 'delete-note': {
+      const result = await deleteNoteById(message.id);
+      notifyDashboard('note-deleted');
+      return result;
+    }
+
+    case 'toggle-pin-note': {
+      const noteKey = NOTE_PREFIX + message.id;
+      const stored = (await storageGet([noteKey]))[noteKey];
+      if (!stored) return { success: false };
+      const updated = { ...stored, pinned: !Boolean(stored.pinned), updatedAt: Date.now() };
+      await storageSet({ [noteKey]: compactBookmark(updated) });
+      notifyDashboard('note-updated');
+      return { pinned: updated.pinned };
+    }
+
+    case 'get-tasks':
+      return await getTasks();
+
+    case 'save-task': {
+      const saved = await saveTask(message.task);
+      notifyDashboard('task-added');
+      return saved;
+    }
+
+    case 'update-task': {
+      const result = await updateTask(message.task);
+      notifyDashboard('task-updated');
+      return result;
+    }
+
+    case 'delete-task': {
+      const result = await deleteTaskById(message.id);
+      notifyDashboard('task-deleted');
+      return result;
+    }
+
+    case 'toggle-pin-task': {
+      const taskKey = TASK_PREFIX + message.id;
+      const stored = (await storageGet([taskKey]))[taskKey];
+      if (!stored) return { success: false };
+      const updated = { ...stored, pinned: !Boolean(stored.pinned), updatedAt: Date.now() };
+      await storageSet({ [taskKey]: compactBookmark(updated) });
+      notifyDashboard('task-updated');
+      return { pinned: updated.pinned };
+    }
 
     case 'get-storage-usage': {
       const [bytesInUse, quota] = await Promise.all([

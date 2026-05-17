@@ -21,6 +21,13 @@
       </div>
     </div>
 
+    <nav class="type-nav" id="typeNav">
+      <button class="type-btn active" data-type="all">All</button>
+      <button class="type-btn" data-type="bookmark">Bookmarks</button>
+      <button class="type-btn" data-type="task">Tasks</button>
+      <button class="type-btn" data-type="note">Notes</button>
+    </nav>
+
     <nav class="sidebar-nav">
       <button class="nav-item active" data-filter="all" id="filterAll">
         <svg class="icon" viewBox="0 0 24 24" fill="none">
@@ -29,7 +36,7 @@
           <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
           <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.75"/>
         </svg>
-        All bookmarks
+        All
         <span class="nav-count" id="allCount">0</span>
       </button>
       <button class="nav-item" data-filter="pinned" id="filterPinned">
@@ -60,14 +67,18 @@
         <!-- Folder tree rendered by JS -->
       </div>
 
-      <div class="sidebar-section-label">GTD Status</div>
-      <div class="gtd-filter-list" id="gtdFilterList">
-        <!-- GTD filter items rendered by JS -->
+      <div id="gtdSection">
+        <div class="sidebar-section-label">GTD Status</div>
+        <div class="gtd-filter-list" id="gtdFilterList">
+          <!-- GTD filter items rendered by JS -->
+        </div>
       </div>
 
-      <div class="sidebar-section-label">Content Type</div>
-      <div class="type-filter-list" id="typeFilterList">
-        <!-- Type filter items rendered by JS -->
+      <div id="typeSection">
+        <div class="sidebar-section-label">Content Type</div>
+        <div class="type-filter-list" id="typeFilterList">
+          <!-- Type filter items rendered by JS -->
+        </div>
       </div>
 
       <div class="sidebar-section-label">Saved On</div>
@@ -147,6 +158,9 @@
         />
         <kbd class="search-hint">⌘K</kbd>
       </div>
+
+      <button class="btn btn-primary new-item-btn" id="newNoteBtn" style="display:none">+ New Note</button>
+      <button class="btn btn-primary new-item-btn" id="newTaskBtn" style="display:none">+ New Task</button>
 
       <div class="sort-wrap">
         <label class="sort-label" for="sortSelect">Sort:</label>
@@ -310,6 +324,127 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancelFolderEdit">Cancel</button>
           <button type="submit" class="btn btn-primary" id="folderSubmitBtn">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Note modal -->
+  <div class="modal-overlay" id="noteModalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="noteModalTitle">
+    <div class="modal" id="noteModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="noteModalTitle">New Note</h2>
+        <button class="icon-btn" id="closeNoteModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="noteForm" autocomplete="off">
+        <input type="hidden" id="noteId">
+        <div class="form-field">
+          <label class="form-label" for="noteTitleInput">Title</label>
+          <input class="form-input" type="text" id="noteTitleInput" placeholder="Note title">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="noteContent">Content</label>
+          <textarea class="form-textarea note-content-area" id="noteContent" rows="8" placeholder="Write your note here…"></textarea>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="noteTagInput">Tags</label>
+          <div class="tag-input-wrap" id="noteTagInputWrap">
+            <div class="tag-chips" id="noteTagChips"></div>
+            <input class="tag-input" id="noteTagInput" type="text" placeholder="Add tags…" autocomplete="off">
+          </div>
+          <div class="autocomplete-dropdown" id="noteAcDropdown" style="display:none"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="noteFolder">Folder</label>
+          <select class="form-select" id="noteFolder">
+            <option value="">— No folder —</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelNoteEdit">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save note</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Task modal -->
+  <div class="modal-overlay" id="taskModalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+    <div class="modal" id="taskModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="taskModalTitle">New Task</h2>
+        <button class="icon-btn" id="closeTaskModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="taskForm" autocomplete="off">
+        <input type="hidden" id="taskId">
+        <div class="form-field">
+          <label class="form-label" for="taskTitleInput">Title</label>
+          <input class="form-input" type="text" id="taskTitleInput" placeholder="Task title">
+        </div>
+        <div class="form-field">
+          <label class="form-label">GTD Status</label>
+          <div class="pill-group" id="taskGtdGroup">
+            <button type="button" class="pill-btn" data-value="next">Next</button>
+            <button type="button" class="pill-btn" data-value="later">Later</button>
+            <button type="button" class="pill-btn" data-value="someday">Someday</button>
+            <button type="button" class="pill-btn" data-value="waiting">Waiting</button>
+            <button type="button" class="pill-btn" data-value="done">Done</button>
+            <button type="button" class="pill-btn" data-value="archived">Archived</button>
+            <button type="button" class="pill-btn" data-value="dropped">Dropped</button>
+            <button type="button" class="pill-btn" data-value="reference">Reference</button>
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Urgency</label>
+          <div class="pill-group" id="taskUrgencyGroup">
+            <button type="button" class="pill-btn pill-priority" data-value="critical">Critical</button>
+            <button type="button" class="pill-btn pill-priority" data-value="high">High</button>
+            <button type="button" class="pill-btn pill-priority" data-value="medium">Medium</button>
+            <button type="button" class="pill-btn pill-priority" data-value="low">Low</button>
+            <button type="button" class="pill-btn pill-priority" data-value="none">None</button>
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Importance</label>
+          <div class="pill-group" id="taskImportanceGroup">
+            <button type="button" class="pill-btn pill-priority" data-value="critical">Critical</button>
+            <button type="button" class="pill-btn pill-priority" data-value="high">High</button>
+            <button type="button" class="pill-btn pill-priority" data-value="medium">Medium</button>
+            <button type="button" class="pill-btn pill-priority" data-value="low">Low</button>
+            <button type="button" class="pill-btn pill-priority" data-value="none">None</button>
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="taskTagInput">Tags</label>
+          <div class="tag-input-wrap" id="taskTagInputWrap">
+            <div class="tag-chips" id="taskTagChips"></div>
+            <input class="tag-input" id="taskTagInput" type="text" placeholder="Add tags…" autocomplete="off">
+          </div>
+          <div class="autocomplete-dropdown" id="taskAcDropdown" style="display:none"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="taskFolder">Folder</label>
+          <select class="form-select" id="taskFolder">
+            <option value="">— No folder —</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="taskNotes">Notes</label>
+          <textarea class="form-textarea" id="taskNotes" rows="4" placeholder="Add a description…"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelTaskEdit">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save task</button>
         </div>
       </form>
     </div>
