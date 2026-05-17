@@ -554,37 +554,49 @@ async function deleteTaskById(id) {
 }
 
 // ── Trash Storage Helpers ───────────────────────────────────────────────────
+//
+// Layout: TRASH_INDEX_KEY holds an array of { trashId, type, deletedAt }
+// objects (metadata only). The raw item data is stored under TRASH_PREFIX +
+// trashId with no extra wrapper, so items that were already near the 8 KB
+// per-key limit are not pushed over it by trash metadata overhead.
 
 async function getTrashItems() {
   const result = await storageGet([TRASH_INDEX_KEY]);
-  const ids = result[TRASH_INDEX_KEY];
-  if (!Array.isArray(ids) || ids.length === 0) return [];
-  const trashKeys = ids.map(id => TRASH_PREFIX + id);
-  const trashResult = await storageGet(trashKeys);
-  return ids.map(id => trashResult[TRASH_PREFIX + id]).filter(Boolean);
+  const index = result[TRASH_INDEX_KEY];
+  if (!Array.isArray(index) || index.length === 0) return [];
+  const trashKeys = index.map(e => TRASH_PREFIX + e.trashId);
+  const dataResult = await storageGet(trashKeys);
+  return index
+    .map(e => {
+      const data = dataResult[TRASH_PREFIX + e.trashId];
+      return data ? { trashId: e.trashId, type: e.type, deletedAt: e.deletedAt, data } : null;
+    })
+    .filter(Boolean);
 }
 
 async function addToTrash(type, item) {
   const result = await storageGet([TRASH_INDEX_KEY]);
-  let ids = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
+  let index = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
 
-  // Enforce max size — drop the oldest items (at end of array) first.
-  if (ids.length >= TRASH_MAX_ITEMS) {
-    const toRemove = ids.splice(TRASH_MAX_ITEMS - 1);
-    await storageRemove(toRemove.map(id => TRASH_PREFIX + id));
+  // Enforce max size — drop the oldest entries (at end of array) first.
+  if (index.length >= TRASH_MAX_ITEMS) {
+    const dropped = index.splice(TRASH_MAX_ITEMS - 1);
+    await storageRemove(dropped.map(e => TRASH_PREFIX + e.trashId));
   }
 
   const trashId = generateId();
-  const trashItem = { trashId, type, deletedAt: Date.now(), data: item };
-  ids = [trashId, ...ids];
-  await storageSet({ [TRASH_INDEX_KEY]: ids, [TRASH_PREFIX + trashId]: trashItem });
-  return trashItem;
+  const entry = { trashId, type, deletedAt: Date.now() };
+  index = [entry, ...index];
+  // Store metadata in the index; store only the raw item data under the
+  // per-key so the trash copy is never larger than the original.
+  await storageSet({ [TRASH_INDEX_KEY]: index, [TRASH_PREFIX + trashId]: item });
+  return entry;
 }
 
 async function removeFromTrash(trashId) {
   const result = await storageGet([TRASH_INDEX_KEY]);
-  const ids = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
-  await storageSet({ [TRASH_INDEX_KEY]: ids.filter(i => i !== trashId) });
+  const index = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
+  await storageSet({ [TRASH_INDEX_KEY]: index.filter(e => e.trashId !== trashId) });
   await storageRemove([TRASH_PREFIX + trashId]);
 }
 
@@ -1001,10 +1013,15 @@ async function handleMessage(message) {
       return await getTrashItems();
 
     case 'restore-from-trash': {
-      const trashResult = await storageGet([TRASH_PREFIX + message.trashId]);
-      const trashItem = trashResult[TRASH_PREFIX + message.trashId];
-      if (!trashItem) return { success: false };
-      const { type, data } = trashItem;
+      // Look up the metadata from the index and the raw data from the per-key.
+      const indexResult = await storageGet([TRASH_INDEX_KEY]);
+      const index = Array.isArray(indexResult[TRASH_INDEX_KEY]) ? indexResult[TRASH_INDEX_KEY] : [];
+      const entry = index.find(e => e.trashId === message.trashId);
+      if (!entry) return { success: false };
+      const dataResult = await storageGet([TRASH_PREFIX + message.trashId]);
+      const data = dataResult[TRASH_PREFIX + message.trashId];
+      if (!data) return { success: false };
+      const { type } = entry;
       if (type === 'bookmark') {
         const bookmarks = await getBookmarks();
         if (!bookmarks.find(b => b.id === data.id)) {
@@ -1038,12 +1055,11 @@ async function handleMessage(message) {
     }
 
     case 'empty-trash': {
-      const items = await getTrashItems();
       const result2 = await storageGet([TRASH_INDEX_KEY]);
-      const ids2 = Array.isArray(result2[TRASH_INDEX_KEY]) ? result2[TRASH_INDEX_KEY] : [];
-      await storageRemove([TRASH_INDEX_KEY, ...ids2.map(id => TRASH_PREFIX + id)]);
+      const index2 = Array.isArray(result2[TRASH_INDEX_KEY]) ? result2[TRASH_INDEX_KEY] : [];
+      await storageRemove([TRASH_INDEX_KEY, ...index2.map(e => TRASH_PREFIX + e.trashId)]);
       notifyDashboard('trash-updated');
-      return { success: true, count: items.length };
+      return { success: true, count: index2.length };
     }
 
     case 'get-storage-usage': {
