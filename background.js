@@ -380,10 +380,7 @@ function syncItemSize(key, value) {
 async function getNotes() {
   const result = await storageGet([NOTE_INDEX_KEY]);
   const ids = result[NOTE_INDEX_KEY];
-  if (!Array.isArray(ids) || ids.length === 0) {
-    if (!Array.isArray(ids)) await storageSet({ [NOTE_INDEX_KEY]: [] });
-    return [];
-  }
+  if (!Array.isArray(ids) || ids.length === 0) return [];
   const noteKeys = ids.map(id => NOTE_PREFIX + id);
   const noteResult = await storageGet(noteKeys);
   return ids
@@ -462,10 +459,7 @@ async function deleteNoteById(id) {
 async function getTasks() {
   const result = await storageGet([TASK_INDEX_KEY]);
   const ids = result[TASK_INDEX_KEY];
-  if (!Array.isArray(ids) || ids.length === 0) {
-    if (!Array.isArray(ids)) await storageSet({ [TASK_INDEX_KEY]: [] });
-    return [];
-  }
+  if (!Array.isArray(ids) || ids.length === 0) return [];
   const taskKeys = ids.map(id => TASK_PREFIX + id);
   const taskResult = await storageGet(taskKeys);
   return ids
