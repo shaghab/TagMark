@@ -1614,8 +1614,12 @@
       const el = $('noteContent');
       const start = el.selectionStart;
       const end = el.selectionEnd;
-      el.value = el.value.slice(0, start) + stamp + el.value.slice(end);
-      el.selectionStart = el.selectionEnd = start + stamp.length;
+      const MAX = 5000;
+      const available = MAX - (el.value.length - (end - start));
+      if (available <= 0) return;
+      const insert = stamp.slice(0, available);
+      el.value = el.value.slice(0, start) + insert + el.value.slice(end);
+      el.selectionStart = el.selectionEnd = start + insert.length;
       el.dispatchEvent(new Event('input'));
     }
   });
