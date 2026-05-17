@@ -1569,6 +1569,10 @@
     $('noteId').value = note ? note.id : '';
     $('noteTitleInput').value = note ? note.title || '' : '';
     $('noteContent').value = note ? note.content || '' : '';
+    const initialLen = $('noteContent').value.length;
+    $('noteCharCounter').textContent = `${initialLen} / 5000`;
+    $('noteCharCounter').classList.toggle('char-counter-warn', initialLen > 4500);
+    $('noteCharCounter').classList.toggle('char-counter-over', initialLen >= 5000);
     noteTags = note ? [...(note.tags || [])] : [];
     renderTagChips($('noteTagChips'), noteTags);
     populateFolderSelect($('noteFolder'), note ? note.folderId || '' : '');
@@ -1585,6 +1589,14 @@
   $('closeNoteModal').addEventListener('click', closeNoteModal);
   $('cancelNoteEdit').addEventListener('click', closeNoteModal);
   $('noteModalOverlay').addEventListener('click', e => { if (e.target === $('noteModalOverlay')) closeNoteModal(); });
+
+  $('noteContent').addEventListener('input', () => {
+    const len = $('noteContent').value.length;
+    const counter = $('noteCharCounter');
+    counter.textContent = `${len} / 5000`;
+    counter.classList.toggle('char-counter-warn', len > 4500);
+    counter.classList.toggle('char-counter-over', len >= 5000);
+  });
 
   $('noteTagInputWrap').addEventListener('click', e => {
     if (e.target.closest('.chip-remove')) {
@@ -1628,13 +1640,14 @@
       tags: [...noteTags],
       folderId: $('noteFolder').value || null
     };
-    if (id) {
-      await chrome.runtime.sendMessage({ action: 'update-note', note: payload });
-      closeNoteModal(); await loadAllObjects(); showToast('Note updated!');
-    } else {
-      await chrome.runtime.sendMessage({ action: 'save-note', note: payload });
-      closeNoteModal(); await loadAllObjects(); showToast('Note saved!');
+    const result = await chrome.runtime.sendMessage({ action: id ? 'update-note' : 'save-note', note: payload });
+    if (result && result.error) {
+      showToast(`Error: ${result.error}`, 'error');
+      return;
     }
+    closeNoteModal();
+    await loadAllObjects();
+    showToast(id ? 'Note updated!' : 'Note saved!');
   });
 
   // ── Task modal ─────────────────────────────────────────────────────────────
@@ -1718,13 +1731,15 @@
       urgency: taskUrgency,
       importance: taskImportance
     };
-    if (id) {
-      await chrome.runtime.sendMessage({ action: 'update-task', task: payload });
-      closeTaskModal(); await loadAllObjects(); showToast('Task updated!');
-    } else {
-      await chrome.runtime.sendMessage({ action: 'save-task', task: payload });
-      closeTaskModal(); await loadAllObjects(); showToast('Task saved!');
+    const action = id ? 'update-task' : 'save-task';
+    const result = await chrome.runtime.sendMessage({ action, task: payload });
+    if (result && result.error) {
+      showToast(`Error: ${result.error}`, 'error');
+      return;
     }
+    closeTaskModal();
+    await loadAllObjects();
+    showToast(id ? 'Task updated!' : 'Task saved!');
   });
 
   // ── Toast ──────────────────────────────────────────────────────────────────

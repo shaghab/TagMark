@@ -14,7 +14,8 @@ const TASK_INDEX_KEY = 'tagmark_index_task'; // ordered array of task IDs
 const TASK_PREFIX    = 'tagmark_task_';      // per-task key: tagmark_task_<id>
 
 const MAX_FOLDER_NAME_LEN = 100;
-const MAX_CONTENT_LEN     = 50000; // max note content length
+const MAX_CONTENT_LEN     = 5000;  // note content cap — chrome.storage.sync is 8 KB per item
+const SYNC_ITEM_QUOTA     = 8192;  // chrome.storage.sync per-item byte limit
 
 const DEFAULT_FOLDER_NAMES = ['Work', 'Personal', 'Learning', 'Entertainment', 'News & Reading', 'Shopping'];
 
@@ -199,11 +200,21 @@ function storageGet(keys) {
 }
 
 function storageSet(items) {
-  return new Promise(resolve => chrome.storage.sync.set(items, resolve));
+  return new Promise((resolve, reject) =>
+    chrome.storage.sync.set(items, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    })
+  );
 }
 
 function storageRemove(keys) {
-  return new Promise(resolve => chrome.storage.sync.remove(keys, resolve));
+  return new Promise((resolve, reject) =>
+    chrome.storage.sync.remove(keys, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    })
+  );
 }
 
 // ── Folder Storage Helpers ───────────────────────────────────────────────────
@@ -358,6 +369,12 @@ async function saveBookmark(bookmark) {
   return newBookmark;
 }
 
+// Returns the byte size chrome.storage.sync will charge for one key-value pair.
+// Chrome measures: key.length + JSON.stringify(value).length (in chars, not UTF-8 bytes).
+function syncItemSize(key, value) {
+  return key.length + JSON.stringify(value).length;
+}
+
 // ── Note Storage Helpers ────────────────────────────────────────────────────
 
 async function getNotes() {
@@ -388,7 +405,12 @@ async function saveNote(note) {
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
-  await storageSet({ [NOTE_INDEX_KEY]: [newNote.id, ...ids], [NOTE_PREFIX + newNote.id]: compactBookmark(newNote) });
+  const noteKey = NOTE_PREFIX + newNote.id;
+  const packed  = compactBookmark(newNote);
+  if (syncItemSize(noteKey, packed) > SYNC_ITEM_QUOTA) {
+    throw new Error('Note is too long to sync. Please shorten the content or title.');
+  }
+  await storageSet({ [NOTE_INDEX_KEY]: [newNote.id, ...ids], [noteKey]: packed });
   return newNote;
 }
 
@@ -413,7 +435,11 @@ async function updateNote(incoming) {
       : (existing.folderId || null),
     updatedAt: Date.now()
   };
-  await storageSet({ [noteKey]: compactBookmark(updated) });
+  const packed = compactBookmark(updated);
+  if (syncItemSize(noteKey, packed) > SYNC_ITEM_QUOTA) {
+    throw new Error('Note is too long to sync. Please shorten the content or title.');
+  }
+  await storageSet({ [noteKey]: packed });
   return { success: true };
 }
 
@@ -815,15 +841,23 @@ async function handleMessage(message) {
       return await getNotes();
 
     case 'save-note': {
-      const saved = await saveNote(message.note);
-      notifyDashboard('note-added');
-      return saved;
+      try {
+        const saved = await saveNote(message.note);
+        notifyDashboard('note-added');
+        return saved;
+      } catch (err) {
+        return { error: err.message || 'Failed to save note.' };
+      }
     }
 
     case 'update-note': {
-      const result = await updateNote(message.note);
-      notifyDashboard('note-updated');
-      return result;
+      try {
+        const result = await updateNote(message.note);
+        notifyDashboard('note-updated');
+        return result;
+      } catch (err) {
+        return { error: err.message || 'Failed to update note.' };
+      }
     }
 
     case 'delete-note': {
@@ -846,15 +880,23 @@ async function handleMessage(message) {
       return await getTasks();
 
     case 'save-task': {
-      const saved = await saveTask(message.task);
-      notifyDashboard('task-added');
-      return saved;
+      try {
+        const saved = await saveTask(message.task);
+        notifyDashboard('task-added');
+        return saved;
+      } catch (err) {
+        return { error: err.message || 'Failed to save task.' };
+      }
     }
 
     case 'update-task': {
-      const result = await updateTask(message.task);
-      notifyDashboard('task-updated');
-      return result;
+      try {
+        const result = await updateTask(message.task);
+        notifyDashboard('task-updated');
+        return result;
+      } catch (err) {
+        return { error: err.message || 'Failed to update task.' };
+      }
     }
 
     case 'delete-task': {

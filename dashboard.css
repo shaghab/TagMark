@@ -1757,3 +1757,12 @@ body {
   min-height: 160px;
   resize: vertical;
 }
+
+.char-counter {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 3px;
+}
+.char-counter-warn { color: #f59e0b; }
+.char-counter-over { color: var(--danger); font-weight: 600; }
