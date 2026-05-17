@@ -7,8 +7,11 @@
   // ── State ──────────────────────────────────────────────────────────────────
 
   let allBookmarks = [];
+  let allNotes = [];
+  let allTasks = [];
   let allTags = [];
   let allFolders = [];
+  let activeObjectType = 'all'; // 'all' | 'bookmark' | 'note' | 'task'
   let selectedTagFilters = [];
   let selectedDateFilter = null; // null | "YYYY" | "YYYY-M" | "YYYY-M-D"
   let selectedFolderFilter = null; // null | folder id
@@ -30,6 +33,19 @@
   let tagSortOrder = 'recent'; // 'recent' | 'name' | 'count'
   let tagListExpanded = false;
   const TAG_LIMIT = 5;
+
+  // Note modal state
+  let noteTags = [];
+  let noteAcItems = [];
+  let noteAcActive = -1;
+
+  // Task modal state
+  let taskTags = [];
+  let taskGtdStatus = null;
+  let taskUrgency = null;
+  let taskImportance = null;
+  let taskAcItems = [];
+  let taskAcActive = -1;
 
   // Folder modal state
   let folderModalMode = null;   // 'new-root' | 'new-sub' | 'rename'
@@ -139,20 +155,24 @@
 
   // ── Load / refresh ─────────────────────────────────────────────────────────
 
-  async function loadBookmarks() {
+  async function loadAllObjects() {
     try {
-      [allBookmarks, allFolders] = await Promise.all([
+      const [bms, notes, tasks, folders] = await Promise.all([
         chrome.runtime.sendMessage({ action: 'get-bookmarks' }),
+        chrome.runtime.sendMessage({ action: 'get-notes' }),
+        chrome.runtime.sendMessage({ action: 'get-tasks' }),
         chrome.runtime.sendMessage({ action: 'get-folders' })
       ]);
-      if (!Array.isArray(allFolders)) allFolders = [];
-      allTags = [...new Set(allBookmarks.flatMap(b => b.tags))].sort();
+      allBookmarks = Array.isArray(bms)    ? bms.map(b => ({ ...b, objectType: 'bookmark' })) : [];
+      allNotes     = Array.isArray(notes)  ? notes.map(n => ({ ...n, objectType: 'note' }))   : [];
+      allTasks     = Array.isArray(tasks)  ? tasks.map(t => ({ ...t, objectType: 'task' }))   : [];
+      allFolders   = Array.isArray(folders) ? folders : [];
+      const tagSet = new Set([...allBookmarks, ...allNotes, ...allTasks].flatMap(item => item.tags || []));
+      allTags = [...tagSet].sort();
     } catch (e) {
-      allBookmarks = [];
-      allTags = [];
-      allFolders = [];
-      console.error('[TagMark] loadBookmarks failed:', e);
-      showToast('Could not load bookmarks. Try reloading the page.', 'error');
+      allBookmarks = []; allNotes = []; allTasks = []; allFolders = []; allTags = [];
+      console.error('[TagMark] loadAllObjects failed:', e);
+      showToast('Could not load data. Try reloading the page.', 'error');
     }
     renderSidebar();
     renderGtdFilter();
@@ -162,6 +182,48 @@
     renderGrid();
     updateStorageMeter();
   }
+
+  // ── Object type switcher ───────────────────────────────────────────────────
+
+  function getActiveItems() {
+    if (activeObjectType === 'all')      return [...allBookmarks, ...allNotes, ...allTasks];
+    if (activeObjectType === 'bookmark') return [...allBookmarks];
+    if (activeObjectType === 'note')     return [...allNotes];
+    if (activeObjectType === 'task')     return [...allTasks];
+    return [...allBookmarks];
+  }
+
+  function switchObjectType(type) {
+    activeObjectType = type;
+    document.querySelectorAll('.type-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.type === type);
+    });
+    const gtdSection  = $('gtdSection');
+    const typeSection = $('typeSection');
+    const newNoteBtn  = $('newNoteBtn');
+    const newTaskBtn  = $('newTaskBtn');
+    if (gtdSection)  gtdSection.style.display  = (type === 'note') ? 'none' : '';
+    if (typeSection) typeSection.style.display = (type === 'task' || type === 'note') ? 'none' : '';
+    if (newNoteBtn)  newNoteBtn.style.display  = (type === 'note') ? '' : 'none';
+    if (newTaskBtn)  newTaskBtn.style.display  = (type === 'task') ? '' : 'none';
+    // Clear type-specific filters that don't apply
+    if (type === 'note' && selectedGtdFilter)  { selectedGtdFilter = null; }
+    if ((type === 'note' || type === 'task') && selectedTypeFilter) { selectedTypeFilter = null; }
+    renderSidebar();
+    renderGtdFilter();
+    renderTypeFilter();
+    renderDateTree();
+    renderFolderTree();
+    refreshMain();
+  }
+
+  document.getElementById('typeNav').addEventListener('click', e => {
+    const btn = e.target.closest('.type-btn');
+    if (btn) switchObjectType(btn.dataset.type);
+  });
+
+  $('newNoteBtn').addEventListener('click', () => openNoteModal());
+  $('newTaskBtn').addEventListener('click', () => openTaskModal());
 
   // ── Storage meter ──────────────────────────────────────────────────────────
 
@@ -193,15 +255,16 @@
   // ── Sidebar ────────────────────────────────────────────────────────────────
 
   function renderSidebar() {
-    allCount.textContent = allBookmarks.length;
-    pinnedCount.textContent = allBookmarks.filter(b => b.pinned).length;
+    const activeItems = getActiveItems();
+    allCount.textContent = activeItems.length;
+    pinnedCount.textContent = activeItems.filter(b => b.pinned).length;
 
     // Build counts and recency per tag
     const tagCounts = {};
     const tagRecency = {};
-    allBookmarks.forEach(b => {
+    activeItems.forEach(b => {
       const ts = b.updatedAt || b.createdAt || 0;
-      b.tags.forEach(t => {
+      (b.tags || []).forEach(t => {
         tagCounts[t] = (tagCounts[t] || 0) + 1;
         if (!tagRecency[t] || ts > tagRecency[t]) tagRecency[t] = ts;
       });
@@ -266,8 +329,12 @@
   // ── GTD & Type sidebar filters ─────────────────────────────────────────────
 
   function renderGtdFilter() {
+    const gtdItems = activeObjectType === 'bookmark' ? allBookmarks
+      : activeObjectType === 'task' ? allTasks
+      : activeObjectType === 'note' ? []
+      : [...allBookmarks, ...allTasks];
     const counts = {};
-    allBookmarks.forEach(b => {
+    gtdItems.forEach(b => {
       if (b.gtdStatus) counts[b.gtdStatus] = (counts[b.gtdStatus] || 0) + 1;
     });
     gtdFilterList.innerHTML = '';
@@ -287,8 +354,9 @@
   }
 
   function renderTypeFilter() {
+    const typeItems = (activeObjectType === 'all' || activeObjectType === 'bookmark') ? allBookmarks : [];
     const counts = {};
-    allBookmarks.forEach(b => {
+    typeItems.forEach(b => {
       if (b.contentType) counts[b.contentType] = (counts[b.contentType] || 0) + 1;
     });
     typeFilterList.innerHTML = '';
@@ -315,7 +383,7 @@
   function buildDateTree() {
     // Returns { year: { month: { day: count } } }
     const tree = {};
-    allBookmarks.forEach(b => {
+    getActiveItems().forEach(b => {
       const d = new Date(b.createdAt);
       const y = d.getFullYear();
       const m = d.getMonth() + 1;
@@ -453,9 +521,9 @@
     return path;
   }
 
-  function getFolderBookmarkCount(folderId) {
+  function getFolderItemCount(folderId) {
     const ids = getFolderDescendantIds(folderId);
-    return allBookmarks.filter(b => ids.has(b.folderId)).length;
+    return getActiveItems().filter(b => ids.has(b.folderId)).length;
   }
 
   // ── Folder tree ─────────────────────────────────────────────────────────────
@@ -471,7 +539,7 @@
       const hasChildren = children.length > 0;
       const isOpen = openFolderIds.has(folder.id);
       const isActive = selectedFolderFilter === folder.id;
-      const count = getFolderBookmarkCount(folder.id);
+      const count = getFolderItemCount(folder.id);
 
       const row = document.createElement('div');
       row.className = 'folder-node-row' + (isActive ? ' active' : '');
@@ -562,16 +630,26 @@
       const folder = allFolders.find(f => f.id === folderId);
       if (!folder) return;
       const descendants = getFolderDescendantIds(folderId);
-      const affected = allBookmarks.filter(b => descendants.has(b.folderId)).length;
-      const confirmMsg = affected > 0
-        ? `Delete "${folder.name}" and all subfolders? ${affected} bookmark(s) will be unassigned.`
-        : `Delete folder "${folder.name}"?`;
+      const affectedBookmarks = allBookmarks.filter(b => descendants.has(b.folderId)).length;
+      const affectedNotes    = allNotes.filter(n => descendants.has(n.folderId)).length;
+      const affectedTasks    = allTasks.filter(t => descendants.has(t.folderId)).length;
+      const affectedTotal    = affectedBookmarks + affectedNotes + affectedTasks;
+      let confirmMsg;
+      if (affectedTotal > 0) {
+        const parts = [];
+        if (affectedBookmarks) parts.push(`${affectedBookmarks} bookmark(s)`);
+        if (affectedNotes)     parts.push(`${affectedNotes} note(s)`);
+        if (affectedTasks)     parts.push(`${affectedTasks} task(s)`);
+        confirmMsg = `Delete "${folder.name}" and all subfolders? ${parts.join(', ')} will be unassigned.`;
+      } else {
+        confirmMsg = `Delete folder "${folder.name}"?`;
+      }
       if (!confirm(confirmMsg)) return;
       await chrome.runtime.sendMessage({ action: 'delete-folder', id: folderId });
       if (selectedFolderFilter && descendants.has(selectedFolderFilter)) {
         selectedFolderFilter = null;
       }
-      await loadBookmarks();
+      await loadAllObjects();
       showToast('Folder deleted.');
     }
   }
@@ -596,7 +674,7 @@
     }
     const wasRename = folderModalMode === 'rename';
     closeFolderModal();
-    await loadBookmarks();
+    await loadAllObjects();
     showToast(wasRename ? 'Folder renamed.' : 'Folder created.');
   });
 
@@ -662,6 +740,7 @@
     renderFolderTree();
     refreshMain();
   });
+
 
   // ── Active filters row ─────────────────────────────────────────────────────
 
@@ -769,20 +848,22 @@
     if (e.key === 'Escape') {
       if (modalOverlay.style.display !== 'none') closeEditModal();
       if ($('folderModalOverlay').style.display !== 'none') closeFolderModal();
+      if ($('noteModalOverlay').style.display !== 'none') closeNoteModal();
+      if ($('taskModalOverlay').style.display !== 'none') closeTaskModal();
     }
   });
 
   // ── Grid rendering ─────────────────────────────────────────────────────────
 
   function getFilteredSorted() {
-    let list = [...allBookmarks];
+    let list = getActiveItems();
 
     // Filter by pinned view
     if (activeFilter === 'pinned') list = list.filter(b => b.pinned);
 
     // Filter by selected tags (AND logic)
     if (selectedTagFilters.length) {
-      list = list.filter(b => selectedTagFilters.every(t => b.tags.includes(t)));
+      list = list.filter(b => selectedTagFilters.every(t => (b.tags || []).includes(t)));
     }
 
     // Filter by selected date
@@ -803,14 +884,14 @@
       list = list.filter(b => folderIds.has(b.folderId));
     }
 
-    // Filter by GTD status
+    // Filter by GTD status (only applies to bookmarks and tasks)
     if (selectedGtdFilter) {
-      list = list.filter(b => b.gtdStatus === selectedGtdFilter);
+      list = list.filter(b => b.objectType !== 'note' && b.gtdStatus === selectedGtdFilter);
     }
 
-    // Filter by content type
+    // Filter by content type (only applies to bookmarks)
     if (selectedTypeFilter) {
-      list = list.filter(b => b.contentType === selectedTypeFilter);
+      list = list.filter(b => b.objectType === 'bookmark' && b.contentType === selectedTypeFilter);
     }
 
     // Filter by search query
@@ -819,7 +900,8 @@
         (b.title || '').toLowerCase().includes(searchQuery) ||
         (b.url || '').toLowerCase().includes(searchQuery) ||
         (b.notes || '').toLowerCase().includes(searchQuery) ||
-        b.tags.some(t => t.includes(searchQuery))
+        (b.content || '').toLowerCase().includes(searchQuery) ||
+        (b.tags || []).some(t => t.includes(searchQuery))
       );
     }
 
@@ -847,25 +929,35 @@
       bookmarkGrid.style.display = 'none';
       emptyState.style.display = '';
 
-      if (allBookmarks.length === 0) {
-        emptyTitle.textContent = 'No bookmarks yet';
-        emptyDesc.textContent = 'Click the TagMark icon in your toolbar to save your first bookmark.';
+      const typeLabel = activeObjectType === 'note' ? 'notes'
+        : activeObjectType === 'task' ? 'tasks'
+        : activeObjectType === 'bookmark' ? 'bookmarks'
+        : 'items';
+      if (getActiveItems().length === 0) {
+        emptyTitle.textContent = activeObjectType === 'note' ? 'No notes yet'
+          : activeObjectType === 'task' ? 'No tasks yet'
+          : activeObjectType === 'bookmark' ? 'No bookmarks yet'
+          : 'Nothing here yet';
+        emptyDesc.textContent = activeObjectType === 'note' ? 'Click "+ New Note" to create your first note.'
+          : activeObjectType === 'task' ? 'Click "+ New Task" to create your first task.'
+          : activeObjectType === 'bookmark' ? 'Click the TagMark icon in your toolbar to save your first bookmark.'
+          : 'Save a bookmark, create a note, or add a task to get started.';
       } else if (searchQuery) {
         emptyTitle.textContent = 'No results found';
-        emptyDesc.textContent = `No bookmarks match "${searchQuery}". Try a different search.`;
+        emptyDesc.textContent = `No ${typeLabel} match "${searchQuery}". Try a different search.`;
       } else if (selectedDateFilter) {
-        emptyTitle.textContent = 'No bookmarks on this date';
-        emptyDesc.textContent = `No bookmarks saved in ${formatDateFilter(selectedDateFilter)}. Try a different date.`;
+        emptyTitle.textContent = `No ${typeLabel} on this date`;
+        emptyDesc.textContent = `No ${typeLabel} found in ${formatDateFilter(selectedDateFilter)}. Try a different date.`;
       } else if (selectedFolderFilter) {
         const fp = getFolderPath(selectedFolderFilter);
-        emptyTitle.textContent = 'No bookmarks in this folder';
-        emptyDesc.textContent = `No bookmarks are saved in "${fp.join(' / ')}". Move bookmarks here by editing them.`;
+        emptyTitle.textContent = `No ${typeLabel} in this folder`;
+        emptyDesc.textContent = `No ${typeLabel} in "${fp.join(' / ')}". Move items here by editing them.`;
       } else if (selectedTagFilters.length) {
-        emptyTitle.textContent = 'No bookmarks with these tags';
-        emptyDesc.textContent = 'Try removing some filters to see more bookmarks.';
+        emptyTitle.textContent = `No ${typeLabel} with these tags`;
+        emptyDesc.textContent = 'Try removing some filters to see more items.';
       } else if (activeFilter === 'pinned') {
-        emptyTitle.textContent = 'No pinned bookmarks';
-        emptyDesc.textContent = 'Star a bookmark from the card or popup to pin it here.';
+        emptyTitle.textContent = `No pinned ${typeLabel}`;
+        emptyDesc.textContent = 'Pin an item from its card to show it here.';
       } else {
         emptyTitle.textContent = 'Nothing here';
         emptyDesc.textContent = 'Try adjusting your filters.';
@@ -875,14 +967,30 @@
 
     emptyState.style.display = 'none';
     bookmarkGrid.style.display = '';
-    bookmarkGrid.innerHTML = filtered.map(b => renderCard(b)).join('');
+    bookmarkGrid.innerHTML = filtered.map(item => {
+      if (item.objectType === 'note') return renderNoteCard(item);
+      if (item.objectType === 'task') return renderTaskCard(item);
+      return renderCard(item);
+    }).join('');
 
     // Attach event listeners
     bookmarkGrid.querySelectorAll('.card-pin-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.preventDefault(); togglePin(btn.dataset.id); });
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const type = btn.dataset.type || 'bookmark';
+        if (type === 'note')     togglePinNote(btn.dataset.id);
+        else if (type === 'task') togglePinTask(btn.dataset.id);
+        else                      togglePin(btn.dataset.id);
+      });
     });
     bookmarkGrid.querySelectorAll('.card-edit-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.preventDefault(); openEditModal(btn.dataset.id); });
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const type = btn.dataset.type || 'bookmark';
+        if (type === 'note')     openNoteModal(btn.dataset.id);
+        else if (type === 'task') openTaskModal(btn.dataset.id);
+        else                      openEditModal(btn.dataset.id);
+      });
     });
     bookmarkGrid.querySelectorAll('.card-delete-btn').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -901,7 +1009,10 @@
         clearTimeout(btn._confirmTimer);
         delete btn.dataset.confirming;
         btn.classList.remove('card-delete-btn-armed');
-        deleteBookmark(btn.dataset.id);
+        const type = btn.dataset.type || 'bookmark';
+        if (type === 'note')     deleteNote(btn.dataset.id);
+        else if (type === 'task') deleteTask(btn.dataset.id);
+        else                      deleteBookmark(btn.dataset.id);
       });
     });
     bookmarkGrid.querySelectorAll('.card-tag').forEach(chip => {
@@ -987,7 +1098,7 @@
             <a class="card-title" href="${escAttr(safeUrl(b.url))}" target="_blank" rel="noopener noreferrer" title="${escAttr(b.title || b.url)}">${escHtml(b.title || b.url)}</a>
             <p class="card-url">${escHtml(formatUrl(b.url))}</p>
           </div>
-          <button class="card-action-btn card-pin-btn${b.pinned ? ' text-amber' : ''}" data-id="${escAttr(b.id)}" title="${b.pinned ? 'Unpin' : 'Pin'}">
+          <button class="card-action-btn card-pin-btn${b.pinned ? ' text-amber' : ''}" data-id="${escAttr(b.id)}" data-type="bookmark" title="${b.pinned ? 'Unpin' : 'Pin'}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="${b.pinned ? '#f59e0b' : 'none'}" stroke="${b.pinned ? '#f59e0b' : 'currentColor'}" stroke-width="2">
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1000,13 +1111,13 @@
         <div class="card-footer">
           <span class="card-date">${formatDate(b.createdAt)}</span>
           <div class="card-actions">
-            <button class="card-action-btn card-edit-btn" data-id="${escAttr(b.id)}" title="Edit">
+            <button class="card-action-btn card-edit-btn" data-id="${escAttr(b.id)}" data-type="bookmark" title="Edit">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
-            <button class="card-action-btn card-delete-btn delete" data-id="${escAttr(b.id)}" title="Delete">
+            <button class="card-action-btn card-delete-btn delete" data-id="${escAttr(b.id)}" data-type="bookmark" title="Delete">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3,6 5,6 21,6" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1024,7 +1135,7 @@
 
   async function togglePin(id) {
     await chrome.runtime.sendMessage({ action: 'toggle-pin', id });
-    await loadBookmarks();
+    await loadAllObjects();
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────────
@@ -1038,8 +1149,149 @@
       await new Promise(r => setTimeout(r, 200));
     }
     await chrome.runtime.sendMessage({ action: 'delete-bookmark', id });
-    await loadBookmarks();
+    await loadAllObjects();
     showToast('Bookmark deleted.');
+  }
+
+  // ── Note & Task card renderers ─────────────────────────────────────────────
+
+  function renderNoteCard(note) {
+    const tagsHtml = (note.tags || []).map(t => {
+      const ci = tagColorIndex(t);
+      return `<span class="tag-chip tc-${ci} card-tag" data-tag="${escAttr(t)}" title="Filter by ${escAttr(t)}">${escHtml(t)}</span>`;
+    }).join('');
+    const contentHtml = note.content
+      ? `<p class="card-notes">${escHtml(note.content)}</p>`
+      : '';
+    const folderPath = note.folderId ? getFolderPath(note.folderId) : null;
+    const folderHtml = folderPath && folderPath.length
+      ? `<div class="card-folder"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></svg>${escHtml(folderPath.join(' / '))}</div>`
+      : '';
+    return `
+      <article class="bookmark-card note-card${note.pinned ? ' pinned' : ''}" data-id="${escAttr(note.id)}" data-type="note">
+        <div class="card-header">
+          <svg class="card-type-icon" viewBox="0 0 24 24" fill="none">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>
+            <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>
+            <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          </svg>
+          <div class="card-title-wrap">
+            <span class="card-title" title="${escAttr(note.title || 'Untitled')}">${escHtml(note.title || 'Untitled')}</span>
+          </div>
+          <button class="card-action-btn card-pin-btn${note.pinned ? ' text-amber' : ''}" data-id="${escAttr(note.id)}" data-type="note" title="${note.pinned ? 'Unpin' : 'Pin'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="${note.pinned ? '#f59e0b' : 'none'}" stroke="${note.pinned ? '#f59e0b' : 'currentColor'}" stroke-width="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        ${folderHtml}
+        ${contentHtml}
+        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+        <div class="card-footer">
+          <span class="card-date">${formatDate(note.createdAt)}</span>
+          <div class="card-actions">
+            <button class="card-action-btn card-edit-btn" data-id="${escAttr(note.id)}" data-type="note" title="Edit">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="card-action-btn card-delete-btn delete" data-id="${escAttr(note.id)}" data-type="note" title="Delete">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke-linecap="round"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  function renderTaskCard(task) {
+    const tagsHtml = (task.tags || []).map(t => {
+      const ci = tagColorIndex(t);
+      return `<span class="tag-chip tc-${ci} card-tag" data-tag="${escAttr(t)}" title="Filter by ${escAttr(t)}">${escHtml(t)}</span>`;
+    }).join('');
+    const notesHtml = task.notes ? `<p class="card-notes">${escHtml(task.notes)}</p>` : '';
+    const gtdHtml = task.gtdStatus
+      ? `<span class="card-badge gtd-badge gtd-${escAttr(task.gtdStatus)}">${escHtml(task.gtdStatus.charAt(0).toUpperCase() + task.gtdStatus.slice(1))}</span>`
+      : '';
+    const { action: priorityAction, score } = calcScore(task);
+    const hasPriority = (task.importance && task.importance !== 'none') || (task.urgency && task.urgency !== 'none');
+    const ACTION_LABEL = { 'do-now': 'Do Now', 'do': 'Do', 'schedule': 'Schedule', 'delegate': 'Delegate', 'incubate': 'Incubate', 'ignore': 'Ignore' };
+    const scoreHtml = hasPriority
+      ? `<span class="card-badge score-badge score-${escAttr(priorityAction)}" title="Urgency: ${escAttr(task.urgency||'none')} · Importance: ${escAttr(task.importance||'none')} · Score: ${score}">⚡ ${escHtml(ACTION_LABEL[priorityAction])}</span>`
+      : '';
+    const badgesHtml = (gtdHtml || scoreHtml) ? `<div class="card-badges">${scoreHtml}${gtdHtml}</div>` : '';
+    const folderPath = task.folderId ? getFolderPath(task.folderId) : null;
+    const folderHtml = folderPath && folderPath.length
+      ? `<div class="card-folder"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></svg>${escHtml(folderPath.join(' / '))}</div>`
+      : '';
+    return `
+      <article class="bookmark-card task-card${task.pinned ? ' pinned' : ''}" data-id="${escAttr(task.id)}" data-type="task">
+        <div class="card-header">
+          <svg class="card-type-icon" viewBox="0 0 24 24" fill="none">
+            <polyline points="9,11 12,14 22,4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="card-title-wrap">
+            <span class="card-title" title="${escAttr(task.title || 'Untitled')}">${escHtml(task.title || 'Untitled')}</span>
+          </div>
+          <button class="card-action-btn card-pin-btn${task.pinned ? ' text-amber' : ''}" data-id="${escAttr(task.id)}" data-type="task" title="${task.pinned ? 'Unpin' : 'Pin'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="${task.pinned ? '#f59e0b' : 'none'}" stroke="${task.pinned ? '#f59e0b' : 'currentColor'}" stroke-width="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        ${badgesHtml}
+        ${folderHtml}
+        ${notesHtml}
+        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+        <div class="card-footer">
+          <span class="card-date">${formatDate(task.createdAt)}</span>
+          <div class="card-actions">
+            <button class="card-action-btn card-edit-btn" data-id="${escAttr(task.id)}" data-type="task" title="Edit">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="card-action-btn card-delete-btn delete" data-id="${escAttr(task.id)}" data-type="task" title="Delete">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke-linecap="round"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  // ── Note & Task pin/delete ──────────────────────────────────────────────────
+
+  async function togglePinNote(id) {
+    await chrome.runtime.sendMessage({ action: 'toggle-pin-note', id });
+    await loadAllObjects();
+  }
+
+  async function togglePinTask(id) {
+    await chrome.runtime.sendMessage({ action: 'toggle-pin-task', id });
+    await loadAllObjects();
+  }
+
+  async function deleteNote(id) {
+    const card = bookmarkGrid.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (card) {
+      card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.95)';
+      await new Promise(r => setTimeout(r, 200));
+    }
+    await chrome.runtime.sendMessage({ action: 'delete-note', id });
+    await loadAllObjects();
+    showToast('Note deleted.');
+  }
+
+  async function deleteTask(id) {
+    const card = bookmarkGrid.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (card) {
+      card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.95)';
+      await new Promise(r => setTimeout(r, 200));
+    }
+    await chrome.runtime.sendMessage({ action: 'delete-task', id });
+    await loadAllObjects();
+    showToast('Task deleted.');
   }
 
   // ── Edit modal ─────────────────────────────────────────────────────────────
@@ -1133,7 +1385,7 @@
       return;
     }
     closeEditModal();
-    await loadBookmarks();
+    await loadAllObjects();
     showToast('Bookmark updated!');
   });
 
@@ -1278,7 +1530,7 @@
       }
       const result = await chrome.runtime.sendMessage({ action: 'import-bookmarks', bookmarks });
       showToast(`Imported ${result.count} bookmarks.`);
-      await loadBookmarks();
+      await loadAllObjects();
     } catch {
       showToast('Import failed — invalid JSON.');
     }
@@ -1293,10 +1545,216 @@
     // but has a different sender.id, so this check prevents it from
     // triggering repeated reloads or other dashboard state changes.
     if (sender.id !== chrome.runtime.id) return;
-    const refreshActions = ['bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported', 'folders-updated'];
+    const refreshActions = [
+      'bookmark-added', 'bookmark-deleted', 'bookmark-updated', 'bookmarks-imported', 'folders-updated',
+      'note-added', 'note-updated', 'note-deleted',
+      'task-added', 'task-updated', 'task-deleted'
+    ];
     if (refreshActions.includes(message.action)) {
-      loadBookmarks();
+      loadAllObjects();
     }
+  });
+
+  // ── Shared autocomplete helpers ────────────────────────────────────────────
+
+  function renderAcDropdown(dropdownEl, items) {
+    if (!items.length) { dropdownEl.style.display = 'none'; return; }
+    dropdownEl.innerHTML = items.map((t, i) => {
+      const ci = tagColorIndex(t);
+      return `<div class="autocomplete-item" data-index="${i}"><span class="tag-dot dot-${ci}"></span>${escHtml(t)}</div>`;
+    }).join('');
+    dropdownEl.style.display = '';
+  }
+
+  function navigateDropdown(dropdownEl, items, dir, setActive) {
+    const els = dropdownEl.querySelectorAll('.autocomplete-item');
+    if (!els.length) return;
+    let active = -1;
+    els.forEach((el, i) => { if (el.classList.contains('active')) active = i; el.classList.remove('active'); });
+    active = Math.max(-1, Math.min(els.length - 1, active + dir));
+    if (active >= 0) els[active].classList.add('active');
+    setActive(active);
+  }
+
+  // ── Note modal ─────────────────────────────────────────────────────────────
+
+  function openNoteModal(id) {
+    const note = id ? allNotes.find(n => n.id === id) : null;
+    $('noteModalTitle').textContent = note ? 'Edit Note' : 'New Note';
+    $('noteId').value = note ? note.id : '';
+    $('noteTitleInput').value = note ? note.title || '' : '';
+    $('noteContent').value = note ? note.content || '' : '';
+    const initialLen = $('noteContent').value.length;
+    $('noteCharCounter').textContent = `${initialLen} / 5000`;
+    $('noteCharCounter').classList.toggle('char-counter-warn', initialLen > 4500);
+    $('noteCharCounter').classList.toggle('char-counter-over', initialLen >= 5000);
+    noteTags = note ? [...(note.tags || [])] : [];
+    renderTagChips($('noteTagChips'), noteTags);
+    populateFolderSelect($('noteFolder'), note ? note.folderId || '' : '');
+    $('noteModalOverlay').style.display = '';
+    setTimeout(() => $('noteTitleInput').focus(), 100);
+  }
+
+  function closeNoteModal() {
+    $('noteModalOverlay').style.display = 'none';
+    noteTags = []; noteAcItems = []; noteAcActive = -1;
+    $('noteAcDropdown').style.display = 'none';
+  }
+
+  $('closeNoteModal').addEventListener('click', closeNoteModal);
+  $('cancelNoteEdit').addEventListener('click', closeNoteModal);
+  $('noteModalOverlay').addEventListener('click', e => { if (e.target === $('noteModalOverlay')) closeNoteModal(); });
+
+  $('noteContent').addEventListener('input', () => {
+    const len = $('noteContent').value.length;
+    const counter = $('noteCharCounter');
+    counter.textContent = `${len} / 5000`;
+    counter.classList.toggle('char-counter-warn', len > 4500);
+    counter.classList.toggle('char-counter-over', len >= 5000);
+  });
+
+  $('noteTagInputWrap').addEventListener('click', e => {
+    if (e.target.closest('.chip-remove')) {
+      const tag = e.target.closest('.chip-remove').dataset.tag;
+      noteTags = noteTags.filter(t => t !== tag);
+      renderTagChips($('noteTagChips'), noteTags);
+    } else { $('noteTagInput').focus(); }
+  });
+
+  $('noteTagInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = $('noteTagInput').value.trim();
+      if (val) { const tag = normalizeTag(val); if (tag && !noteTags.includes(tag)) { noteTags.push(tag); renderTagChips($('noteTagChips'), noteTags); } $('noteTagInput').value = ''; $('noteAcDropdown').style.display = 'none'; }
+    } else if (e.key === 'Backspace' && !$('noteTagInput').value && noteTags.length) {
+      noteTags.pop(); renderTagChips($('noteTagChips'), noteTags);
+    } else if (e.key === 'ArrowDown') { e.preventDefault(); navigateDropdown($('noteAcDropdown'), noteAcItems, 1, idx => { noteAcActive = idx; }); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); navigateDropdown($('noteAcDropdown'), noteAcItems, -1, idx => { noteAcActive = idx; }); }
+      else if (e.key === 'Escape')    { $('noteAcDropdown').style.display = 'none'; }
+  });
+
+  $('noteTagInput').addEventListener('input', () => {
+    const q = $('noteTagInput').value.trim().toLowerCase();
+    if (!q) { $('noteAcDropdown').style.display = 'none'; return; }
+    noteAcItems = allTags.filter(t => t.includes(q) && !noteTags.includes(t)).slice(0, AC_MAX_ITEMS);
+    renderAcDropdown($('noteAcDropdown'), noteAcItems);
+  });
+  $('noteTagInput').addEventListener('blur', () => setTimeout(() => { $('noteAcDropdown').style.display = 'none'; }, BLUR_HIDE_DELAY_MS));
+  $('noteAcDropdown').addEventListener('mousedown', e => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item) { e.preventDefault(); const tag = normalizeTag(noteAcItems[+item.dataset.index]); if (tag && !noteTags.includes(tag)) { noteTags.push(tag); renderTagChips($('noteTagChips'), noteTags); } $('noteTagInput').value = ''; $('noteAcDropdown').style.display = 'none'; }
+  });
+
+  $('noteForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = $('noteId').value;
+    const payload = {
+      id: id || undefined,
+      title: $('noteTitleInput').value.trim(),
+      content: $('noteContent').value,
+      tags: [...noteTags],
+      folderId: $('noteFolder').value || null
+    };
+    const result = await chrome.runtime.sendMessage({ action: id ? 'update-note' : 'save-note', note: payload });
+    if (result && result.error) {
+      showToast(`Error: ${result.error}`, 'error');
+      return;
+    }
+    closeNoteModal();
+    await loadAllObjects();
+    showToast(id ? 'Note updated!' : 'Note saved!');
+  });
+
+  // ── Task modal ─────────────────────────────────────────────────────────────
+
+  function openTaskModal(id) {
+    const task = id ? allTasks.find(t => t.id === id) : null;
+    $('taskModalTitle').textContent = task ? 'Edit Task' : 'New Task';
+    $('taskId').value = task ? task.id : '';
+    $('taskTitleInput').value = task ? task.title || '' : '';
+    $('taskNotes').value = task ? task.notes || '' : '';
+    taskTags = task ? [...(task.tags || [])] : [];
+    renderTagChips($('taskTagChips'), taskTags);
+    populateFolderSelect($('taskFolder'), task ? task.folderId || '' : '');
+    taskGtdStatus = task ? task.gtdStatus || null : null;
+    $('taskGtdGroup').querySelectorAll('.pill-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.value === taskGtdStatus));
+    taskUrgency = task ? task.urgency || null : null;
+    $('taskUrgencyGroup').querySelectorAll('.pill-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.value === taskUrgency));
+    taskImportance = task ? task.importance || null : null;
+    $('taskImportanceGroup').querySelectorAll('.pill-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.value === taskImportance));
+    $('taskModalOverlay').style.display = '';
+    setTimeout(() => $('taskTitleInput').focus(), 100);
+  }
+
+  function closeTaskModal() {
+    $('taskModalOverlay').style.display = 'none';
+    taskTags = []; taskGtdStatus = null; taskUrgency = null; taskImportance = null;
+    taskAcItems = []; taskAcActive = -1;
+    $('taskAcDropdown').style.display = 'none';
+  }
+
+  $('closeTaskModal').addEventListener('click', closeTaskModal);
+  $('cancelTaskEdit').addEventListener('click', closeTaskModal);
+  $('taskModalOverlay').addEventListener('click', e => { if (e.target === $('taskModalOverlay')) closeTaskModal(); });
+
+  setupPillGroup($('taskGtdGroup'),        v => { taskGtdStatus = v; });
+  setupPillGroup($('taskUrgencyGroup'),    v => { taskUrgency = v; });
+  setupPillGroup($('taskImportanceGroup'), v => { taskImportance = v; });
+
+  $('taskTagInputWrap').addEventListener('click', e => {
+    if (e.target.closest('.chip-remove')) {
+      const tag = e.target.closest('.chip-remove').dataset.tag;
+      taskTags = taskTags.filter(t => t !== tag);
+      renderTagChips($('taskTagChips'), taskTags);
+    } else { $('taskTagInput').focus(); }
+  });
+
+  $('taskTagInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = $('taskTagInput').value.trim();
+      if (val) { const tag = normalizeTag(val); if (tag && !taskTags.includes(tag)) { taskTags.push(tag); renderTagChips($('taskTagChips'), taskTags); } $('taskTagInput').value = ''; $('taskAcDropdown').style.display = 'none'; }
+    } else if (e.key === 'Backspace' && !$('taskTagInput').value && taskTags.length) {
+      taskTags.pop(); renderTagChips($('taskTagChips'), taskTags);
+    } else if (e.key === 'ArrowDown') { e.preventDefault(); navigateDropdown($('taskAcDropdown'), taskAcItems, 1, idx => { taskAcActive = idx; }); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); navigateDropdown($('taskAcDropdown'), taskAcItems, -1, idx => { taskAcActive = idx; }); }
+      else if (e.key === 'Escape')    { $('taskAcDropdown').style.display = 'none'; }
+  });
+
+  $('taskTagInput').addEventListener('input', () => {
+    const q = $('taskTagInput').value.trim().toLowerCase();
+    if (!q) { $('taskAcDropdown').style.display = 'none'; return; }
+    taskAcItems = allTags.filter(t => t.includes(q) && !taskTags.includes(t)).slice(0, AC_MAX_ITEMS);
+    renderAcDropdown($('taskAcDropdown'), taskAcItems);
+  });
+  $('taskTagInput').addEventListener('blur', () => setTimeout(() => { $('taskAcDropdown').style.display = 'none'; }, BLUR_HIDE_DELAY_MS));
+  $('taskAcDropdown').addEventListener('mousedown', e => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item) { e.preventDefault(); const tag = normalizeTag(taskAcItems[+item.dataset.index]); if (tag && !taskTags.includes(tag)) { taskTags.push(tag); renderTagChips($('taskTagChips'), taskTags); } $('taskTagInput').value = ''; $('taskAcDropdown').style.display = 'none'; }
+  });
+
+  $('taskForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = $('taskId').value;
+    const payload = {
+      id: id || undefined,
+      title: $('taskTitleInput').value.trim(),
+      notes: $('taskNotes').value,
+      tags: [...taskTags],
+      folderId: $('taskFolder').value || null,
+      gtdStatus: taskGtdStatus,
+      urgency: taskUrgency,
+      importance: taskImportance
+    };
+    const action = id ? 'update-task' : 'save-task';
+    const result = await chrome.runtime.sendMessage({ action, task: payload });
+    if (result && result.error) {
+      showToast(`Error: ${result.error}`, 'error');
+      return;
+    }
+    closeTaskModal();
+    await loadAllObjects();
+    showToast(id ? 'Task updated!' : 'Task saved!');
   });
 
   // ── Toast ──────────────────────────────────────────────────────────────────
@@ -1312,6 +1770,6 @@
   // ── Boot ───────────────────────────────────────────────────────────────────
 
   applyTheme(getTheme());
-  loadBookmarks();
+  loadAllObjects();
 
 })();
