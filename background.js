@@ -481,10 +481,14 @@ async function getTasks() {
 async function saveTask(task) {
   const result = await storageGet([TASK_INDEX_KEY]);
   const ids = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+  const notes = typeof task.notes === 'string' ? task.notes : '';
+  if (notes.length > MAX_NOTES_LEN) {
+    throw new Error(`Task notes exceed the ${MAX_NOTES_LEN}-character limit.`);
+  }
   const newTask = {
     id: generateId(),
     title: (typeof task.title === 'string' ? task.title.trim() : '').slice(0, MAX_TITLE_LEN) || 'Untitled',
-    notes: (typeof task.notes === 'string' ? task.notes : '').slice(0, MAX_NOTES_LEN),
+    notes,
     tags: normalizeTags(task.tags),
     pinned: Boolean(task.pinned),
     folderId: typeof task.folderId === 'string' && task.folderId ? task.folderId : null,
@@ -494,7 +498,12 @@ async function saveTask(task) {
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
-  await storageSet({ [TASK_INDEX_KEY]: [newTask.id, ...ids], [TASK_PREFIX + newTask.id]: compactBookmark(newTask) });
+  const taskKey = TASK_PREFIX + newTask.id;
+  const packed  = compactBookmark(newTask);
+  if (syncItemSize(taskKey, packed) > SYNC_ITEM_QUOTA) {
+    throw new Error('Task is too long to sync. Please shorten the notes or title.');
+  }
+  await storageSet({ [TASK_INDEX_KEY]: [newTask.id, ...ids], [taskKey]: packed });
   return newTask;
 }
 
@@ -509,9 +518,11 @@ async function updateTask(incoming) {
     title: typeof incoming.title === 'string'
       ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.title || 'Untitled'
       : (existing.title || 'Untitled'),
-    notes: typeof incoming.notes === 'string'
-      ? incoming.notes.slice(0, MAX_NOTES_LEN)
-      : (existing.notes || ''),
+    notes: (() => {
+      const n = typeof incoming.notes === 'string' ? incoming.notes : (existing.notes || '');
+      if (n.length > MAX_NOTES_LEN) throw new Error(`Task notes exceed the ${MAX_NOTES_LEN}-character limit.`);
+      return n;
+    })(),
     tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : (existing.tags || [])),
     pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : Boolean(existing.pinned),
     folderId: typeof incoming.folderId !== 'undefined'
@@ -528,7 +539,11 @@ async function updateTask(incoming) {
       : (existing.importance || null),
     updatedAt: Date.now()
   };
-  await storageSet({ [taskKey]: compactBookmark(updated) });
+  const packed = compactBookmark(updated);
+  if (syncItemSize(taskKey, packed) > SYNC_ITEM_QUOTA) {
+    throw new Error('Task is too long to sync. Please shorten the notes or title.');
+  }
+  await storageSet({ [taskKey]: packed });
   return { success: true };
 }
 
