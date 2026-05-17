@@ -212,6 +212,8 @@
     renderSidebar();
     renderGtdFilter();
     renderTypeFilter();
+    renderDateTree();
+    renderFolderTree();
     refreshMain();
   }
 
@@ -628,10 +630,20 @@
       const folder = allFolders.find(f => f.id === folderId);
       if (!folder) return;
       const descendants = getFolderDescendantIds(folderId);
-      const affected = allBookmarks.filter(b => descendants.has(b.folderId)).length;
-      const confirmMsg = affected > 0
-        ? `Delete "${folder.name}" and all subfolders? ${affected} bookmark(s) will be unassigned.`
-        : `Delete folder "${folder.name}"?`;
+      const affectedBookmarks = allBookmarks.filter(b => descendants.has(b.folderId)).length;
+      const affectedNotes    = allNotes.filter(n => descendants.has(n.folderId)).length;
+      const affectedTasks    = allTasks.filter(t => descendants.has(t.folderId)).length;
+      const affectedTotal    = affectedBookmarks + affectedNotes + affectedTasks;
+      let confirmMsg;
+      if (affectedTotal > 0) {
+        const parts = [];
+        if (affectedBookmarks) parts.push(`${affectedBookmarks} bookmark(s)`);
+        if (affectedNotes)     parts.push(`${affectedNotes} note(s)`);
+        if (affectedTasks)     parts.push(`${affectedTasks} task(s)`);
+        confirmMsg = `Delete "${folder.name}" and all subfolders? ${parts.join(', ')} will be unassigned.`;
+      } else {
+        confirmMsg = `Delete folder "${folder.name}"?`;
+      }
       if (!confirm(confirmMsg)) return;
       await chrome.runtime.sendMessage({ action: 'delete-folder', id: folderId });
       if (selectedFolderFilter && descendants.has(selectedFolderFilter)) {
