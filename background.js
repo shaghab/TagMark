@@ -395,10 +395,14 @@ async function getNotes() {
 async function saveNote(note) {
   const result = await storageGet([NOTE_INDEX_KEY]);
   const ids = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+  const content = typeof note.content === 'string' ? note.content : '';
+  if (content.length > MAX_CONTENT_LEN) {
+    throw new Error(`Note content exceeds the ${MAX_CONTENT_LEN}-character limit.`);
+  }
   const newNote = {
     id: generateId(),
     title: (typeof note.title === 'string' ? note.title.trim() : '').slice(0, MAX_TITLE_LEN) || 'Untitled',
-    content: (typeof note.content === 'string' ? note.content : '').slice(0, MAX_CONTENT_LEN),
+    content,
     tags: normalizeTags(note.tags),
     pinned: Boolean(note.pinned),
     folderId: typeof note.folderId === 'string' && note.folderId ? note.folderId : null,
@@ -425,9 +429,11 @@ async function updateNote(incoming) {
     title: typeof incoming.title === 'string'
       ? incoming.title.trim().slice(0, MAX_TITLE_LEN) || existing.title || 'Untitled'
       : (existing.title || 'Untitled'),
-    content: typeof incoming.content === 'string'
-      ? incoming.content.slice(0, MAX_CONTENT_LEN)
-      : (existing.content || ''),
+    content: (() => {
+      const c = typeof incoming.content === 'string' ? incoming.content : (existing.content || '');
+      if (c.length > MAX_CONTENT_LEN) throw new Error(`Note content exceeds the ${MAX_CONTENT_LEN}-character limit.`);
+      return c;
+    })(),
     tags: normalizeTags(Array.isArray(incoming.tags) ? incoming.tags : (existing.tags || [])),
     pinned: typeof incoming.pinned === 'boolean' ? incoming.pinned : Boolean(existing.pinned),
     folderId: typeof incoming.folderId !== 'undefined'
