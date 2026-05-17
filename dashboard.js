@@ -207,8 +207,11 @@
     if (newNoteBtn)  newNoteBtn.style.display  = (type === 'note') ? '' : 'none';
     if (newTaskBtn)  newTaskBtn.style.display  = (type === 'task') ? '' : 'none';
     // Clear type-specific filters that don't apply
-    if (type === 'note' && selectedGtdFilter)  { selectedGtdFilter = null;  renderGtdFilter(); }
-    if ((type === 'note' || type === 'task') && selectedTypeFilter) { selectedTypeFilter = null; renderTypeFilter(); }
+    if (type === 'note' && selectedGtdFilter)  { selectedGtdFilter = null; }
+    if ((type === 'note' || type === 'task') && selectedTypeFilter) { selectedTypeFilter = null; }
+    renderSidebar();
+    renderGtdFilter();
+    renderTypeFilter();
     refreshMain();
   }
 
