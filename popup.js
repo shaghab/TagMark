@@ -290,25 +290,19 @@
     pageTitle.textContent = tab.title || tab.url;
     pageUrl.textContent = formatUrl(tab.url);
 
-    const safeFavIcon = sanitizeFavIconUrl(tab.favIconUrl || '');
     const googleFavicon = (() => {
       try {
         const host = new URL(tab.url).hostname;
         return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
       } catch { return ''; }
     })();
-    const faviconSrc = safeFavIcon || googleFavicon;
-    if (faviconSrc) {
-      pageFavicon.src = faviconSrc;
+    if (googleFavicon) {
+      pageFavicon.src = googleFavicon;
       pageFavicon.style.display = '';
       faviconFall.style.display = 'none';
       pageFavicon.onerror = () => {
-        if (safeFavIcon && googleFavicon && pageFavicon.src !== googleFavicon) {
-          pageFavicon.src = googleFavicon;
-        } else {
-          pageFavicon.style.display = 'none';
-          faviconFall.style.display = '';
-        }
+        pageFavicon.style.display = 'none';
+        faviconFall.style.display = '';
       };
     } else {
       pageFavicon.style.display = 'none';
