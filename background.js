@@ -576,7 +576,7 @@ async function getTrashItems() {
 
 async function addToTrash(type, item) {
   const result = await storageGet([TRASH_INDEX_KEY]);
-  let index = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
+  const originalIndex = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
 
   const trashId = generateId();
   const trashKey = TRASH_PREFIX + trashId;
@@ -587,24 +587,25 @@ async function addToTrash(type, item) {
     return null;
   }
 
-  // Enforce max size — defer eviction until the new item is known to fit.
-  let dropped = [];
-  if (index.length >= TRASH_MAX_ITEMS) {
-    dropped = index.splice(TRASH_MAX_ITEMS - 1);
-  }
+  // Enforce max size — build the trimmed index without mutating originalIndex
+  // so rollback always has the correct pre-write state to restore.
+  const trimmed = originalIndex.length >= TRASH_MAX_ITEMS
+    ? originalIndex.slice(0, TRASH_MAX_ITEMS - 1)
+    : originalIndex;
+  const dropped = originalIndex.slice(trimmed.length);
 
   const entry = { trashId, type, deletedAt: Date.now() };
-  index = [entry, ...index];
+  const newIndex = [entry, ...trimmed];
   // Store metadata in the index; store only the raw item data under the
   // per-key so the trash copy is never larger than the original.
   // Catch quota errors (total sync storage full) the same way as the
   // per-item size check: return null so callers fall back to permanent
   // deletion rather than letting the exception abort the delete entirely.
   try {
-    await storageSet({ [TRASH_INDEX_KEY]: index, [trashKey]: item });
+    await storageSet({ [TRASH_INDEX_KEY]: newIndex, [trashKey]: item });
   } catch (err) {
-    // Roll back the optimistic index update so no orphaned index entry remains.
-    await storageSet({ [TRASH_INDEX_KEY]: index.filter(e => e.trashId !== trashId) }).catch(() => {});
+    // Restore the original index so no existing entries are hidden.
+    await storageSet({ [TRASH_INDEX_KEY]: originalIndex }).catch(() => {});
     return null;
   }
   // Only remove evicted data-keys after the write succeeds.
