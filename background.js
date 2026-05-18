@@ -578,21 +578,19 @@ async function addToTrash(type, item) {
   const result = await storageGet([TRASH_INDEX_KEY]);
   let index = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
 
-  // Enforce max size — drop the oldest entries (at end of array) first.
-  if (index.length >= TRASH_MAX_ITEMS) {
-    const dropped = index.splice(TRASH_MAX_ITEMS - 1);
-    await storageRemove(dropped.map(e => TRASH_PREFIX + e.trashId));
-  }
-
   const trashId = generateId();
   const trashKey = TRASH_PREFIX + trashId;
 
-  // Trash key prefixes are longer than item key prefixes, so an item already
-  // near the 8 KB per-key limit can exceed quota when stored under the trash
-  // key. Skip the trash write rather than blocking deletion entirely; return
-  // null so callers know no entry was created.
+  // Check per-item size before touching the index or evicting anything, so a
+  // too-large item never causes an existing trash entry to be silently lost.
   if (syncItemSize(trashKey, item) > SYNC_ITEM_QUOTA) {
     return null;
+  }
+
+  // Enforce max size — defer eviction until the new item is known to fit.
+  let dropped = [];
+  if (index.length >= TRASH_MAX_ITEMS) {
+    dropped = index.splice(TRASH_MAX_ITEMS - 1);
   }
 
   const entry = { trashId, type, deletedAt: Date.now() };
@@ -608,6 +606,10 @@ async function addToTrash(type, item) {
     // Roll back the optimistic index update so no orphaned index entry remains.
     await storageSet({ [TRASH_INDEX_KEY]: index.filter(e => e.trashId !== trashId) }).catch(() => {});
     return null;
+  }
+  // Only remove evicted data-keys after the write succeeds.
+  if (dropped.length) {
+    await storageRemove(dropped.map(e => TRASH_PREFIX + e.trashId)).catch(() => {});
   }
   return entry;
 }

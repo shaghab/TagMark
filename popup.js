@@ -224,8 +224,8 @@
     $('popupConfirmOverlay').style.display = 'none';
     $('popupConfirmOk').disabled = true;
     try {
-      await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
-      showToast('Moved to Trash.');
+      const result = await chrome.runtime.sendMessage({ action: 'delete-bookmark', id: existingBookmark.id });
+      showToast(result && result.trashed === false ? 'Permanently deleted (too large for Trash).' : 'Moved to Trash.');
       setTimeout(() => window.close(), WINDOW_CLOSE_DELAY_MS);
     } catch {
       showToast('Error deleting bookmark.');
