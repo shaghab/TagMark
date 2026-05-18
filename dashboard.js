@@ -11,6 +11,8 @@
   let allTasks = [];
   let allTags = [];
   let allFolders = [];
+  let allTrashItems = [];
+  let viewingTrash = false;
   let activeObjectType = 'all'; // 'all' | 'bookmark' | 'note' | 'task'
   let selectedTagFilters = [];
   let selectedDateFilter = null; // null | "YYYY" | "YYYY-M" | "YYYY-M-D"
@@ -157,16 +159,19 @@
 
   async function loadAllObjects() {
     try {
-      const [bms, notes, tasks, folders] = await Promise.all([
+      const [bms, notes, tasks, folders, trash] = await Promise.all([
         chrome.runtime.sendMessage({ action: 'get-bookmarks' }),
         chrome.runtime.sendMessage({ action: 'get-notes' }),
         chrome.runtime.sendMessage({ action: 'get-tasks' }),
-        chrome.runtime.sendMessage({ action: 'get-folders' })
+        chrome.runtime.sendMessage({ action: 'get-folders' }),
+        chrome.runtime.sendMessage({ action: 'get-trash' })
       ]);
-      allBookmarks = Array.isArray(bms)    ? bms.map(b => ({ ...b, objectType: 'bookmark' })) : [];
-      allNotes     = Array.isArray(notes)  ? notes.map(n => ({ ...n, objectType: 'note' }))   : [];
-      allTasks     = Array.isArray(tasks)  ? tasks.map(t => ({ ...t, objectType: 'task' }))   : [];
-      allFolders   = Array.isArray(folders) ? folders : [];
+      allBookmarks  = Array.isArray(bms)    ? bms.map(b => ({ ...b, objectType: 'bookmark' })) : [];
+      allNotes      = Array.isArray(notes)  ? notes.map(n => ({ ...n, objectType: 'note' }))   : [];
+      allTasks      = Array.isArray(tasks)  ? tasks.map(t => ({ ...t, objectType: 'task' }))   : [];
+      allFolders    = Array.isArray(folders) ? folders : [];
+      allTrashItems = Array.isArray(trash)  ? trash : [];
+      $('trashCount').textContent = allTrashItems.length;
       const tagSet = new Set([...allBookmarks, ...allNotes, ...allTasks].flatMap(item => item.tags || []));
       allTags = [...tagSet].sort();
     } catch (e) {
@@ -194,6 +199,9 @@
   }
 
   function switchObjectType(type) {
+    viewingTrash = false;
+    $('filterTrash').classList.remove('active');
+    $('trashToolbar').style.display = 'none';
     activeObjectType = type;
     document.querySelectorAll('.type-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.type === type);
@@ -714,17 +722,33 @@
   });
 
   filterAll.addEventListener('click', () => {
+    viewingTrash = false;
     activeFilter = 'all';
     filterAll.classList.add('active');
     filterPinned.classList.remove('active');
+    $('filterTrash').classList.remove('active');
+    $('trashToolbar').style.display = 'none';
     renderGrid();
   });
 
   filterPinned.addEventListener('click', () => {
+    viewingTrash = false;
     activeFilter = 'pinned';
     filterPinned.classList.add('active');
     filterAll.classList.remove('active');
+    $('filterTrash').classList.remove('active');
+    $('trashToolbar').style.display = 'none';
     renderGrid();
+  });
+
+  $('filterTrash').addEventListener('click', async () => {
+    viewingTrash = true;
+    activeFilter = 'all'; // reset so leaving Trash via type tabs shows all items
+    $('filterTrash').classList.add('active');
+    filterAll.classList.remove('active');
+    filterPinned.classList.remove('active');
+    await loadTrash();
+    renderTrashView();
   });
 
   clearFilters.addEventListener('click', () => {
@@ -846,10 +870,11 @@
       searchInput.select();
     }
     if (e.key === 'Escape') {
-      if (modalOverlay.style.display !== 'none') closeEditModal();
-      if ($('folderModalOverlay').style.display !== 'none') closeFolderModal();
-      if ($('noteModalOverlay').style.display !== 'none') closeNoteModal();
-      if ($('taskModalOverlay').style.display !== 'none') closeTaskModal();
+      if ($('confirmOverlay').style.display !== 'none') closeConfirmModal();
+      else if (modalOverlay.style.display !== 'none') closeEditModal();
+      else if ($('folderModalOverlay').style.display !== 'none') closeFolderModal();
+      else if ($('noteModalOverlay').style.display !== 'none') closeNoteModal();
+      else if ($('taskModalOverlay').style.display !== 'none') closeTaskModal();
     }
   });
 
@@ -922,6 +947,8 @@
   }
 
   function renderGrid() {
+    if (viewingTrash) { renderTrashView(); return; }
+    $('trashToolbar').style.display = 'none';
     loadingState.style.display = 'none';
     const filtered = getFilteredSorted();
 
@@ -995,24 +1022,18 @@
     bookmarkGrid.querySelectorAll('.card-delete-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.preventDefault();
-        if (!btn.dataset.confirming) {
-          btn.dataset.confirming = '1';
-          btn.classList.add('card-delete-btn-armed');
-          btn.title = 'Click again to confirm';
-          btn._confirmTimer = setTimeout(() => {
-            delete btn.dataset.confirming;
-            btn.classList.remove('card-delete-btn-armed');
-            btn.title = 'Delete';
-          }, 3000);
-          return;
-        }
-        clearTimeout(btn._confirmTimer);
-        delete btn.dataset.confirming;
-        btn.classList.remove('card-delete-btn-armed');
         const type = btn.dataset.type || 'bookmark';
-        if (type === 'note')     deleteNote(btn.dataset.id);
-        else if (type === 'task') deleteTask(btn.dataset.id);
-        else                      deleteBookmark(btn.dataset.id);
+        const id   = btn.dataset.id;
+        let item;
+        if (type === 'note')      item = allNotes.find(n => n.id === id);
+        else if (type === 'task') item = allTasks.find(t => t.id === id);
+        else                      item = allBookmarks.find(b => b.id === id);
+        const title = item ? (item.title || item.url || 'this item') : 'this item';
+        openConfirmModal(`Move to Trash?`, `"${title}" will be moved to Trash. You can restore it later.`, () => {
+          if (type === 'note')      deleteNote(id);
+          else if (type === 'task') deleteTask(id);
+          else                      deleteBookmark(id);
+        });
       });
     });
     bookmarkGrid.querySelectorAll('.card-tag').forEach(chip => {
@@ -1148,9 +1169,9 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-bookmark', id });
+    const result = await chrome.runtime.sendMessage({ action: 'delete-bookmark', id });
     await loadAllObjects();
-    showToast('Bookmark deleted.');
+    showToast(result && result.trashed === false ? 'Bookmark permanently deleted (too large for Trash).' : 'Bookmark moved to Trash.');
   }
 
   // ── Note & Task card renderers ─────────────────────────────────────────────
@@ -1276,9 +1297,9 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-note', id });
+    const noteResult = await chrome.runtime.sendMessage({ action: 'delete-note', id });
     await loadAllObjects();
-    showToast('Note deleted.');
+    showToast(noteResult && noteResult.trashed === false ? 'Note permanently deleted (too large for Trash).' : 'Note moved to Trash.');
   }
 
   async function deleteTask(id) {
@@ -1289,10 +1310,143 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-task', id });
+    const taskResult = await chrome.runtime.sendMessage({ action: 'delete-task', id });
     await loadAllObjects();
-    showToast('Task deleted.');
+    showToast(taskResult && taskResult.trashed === false ? 'Task permanently deleted (too large for Trash).' : 'Task moved to Trash.');
   }
+
+  // ── Confirm modal ──────────────────────────────────────────────────────────
+
+  let _confirmCallback = null;
+
+  function openConfirmModal(title, message, onConfirm) {
+    $('confirmTitle').textContent = title;
+    $('confirmMsg').textContent = message;
+    _confirmCallback = onConfirm;
+    $('confirmOverlay').style.display = '';
+    $('confirmOk').focus();
+  }
+
+  function closeConfirmModal() {
+    $('confirmOverlay').style.display = 'none';
+    $('confirmOk').textContent = 'Move to Trash';
+    _confirmCallback = null;
+  }
+
+  $('confirmCancel').addEventListener('click', closeConfirmModal);
+  $('confirmOk').addEventListener('click', () => {
+    const cb = _confirmCallback;
+    closeConfirmModal();
+    if (cb) cb();
+  });
+  $('confirmOverlay').addEventListener('click', e => {
+    if (e.target === $('confirmOverlay')) closeConfirmModal();
+  });
+
+  // ── Trash view ─────────────────────────────────────────────────────────────
+
+  async function loadTrash() {
+    try {
+      const items = await chrome.runtime.sendMessage({ action: 'get-trash' });
+      allTrashItems = Array.isArray(items) ? items : [];
+    } catch {
+      allTrashItems = [];
+    }
+    $('trashCount').textContent = allTrashItems.length;
+  }
+
+  function renderTrashView() {
+    loadingState.style.display = 'none';
+    $('trashToolbar').style.display = '';
+
+    if (!allTrashItems.length) {
+      bookmarkGrid.style.display = 'none';
+      emptyState.style.display = '';
+      emptyTitle.textContent = 'Trash is empty';
+      emptyDesc.textContent = 'Deleted items will appear here. You can restore or permanently delete them.';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    bookmarkGrid.style.display = '';
+    bookmarkGrid.innerHTML = allTrashItems.map(renderTrashCard).join('');
+
+    bookmarkGrid.querySelectorAll('.trash-restore-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const result = await chrome.runtime.sendMessage({ action: 'restore-from-trash', trashId: btn.dataset.trashId });
+        await loadTrash();
+        await loadAllObjects();
+        if (result && result.reason === 'duplicate') {
+          showToast('A bookmark with this URL already exists — trash entry removed.', 'error');
+        } else {
+          showToast('Item restored.');
+        }
+      });
+    });
+
+    bookmarkGrid.querySelectorAll('.trash-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const trashId = btn.dataset.trashId;
+        const item = allTrashItems.find(i => i.trashId === trashId);
+        const title = item ? (item.data.title || item.data.url || 'this item') : 'this item';
+        openConfirmModal('Permanently delete?', `"${title}" will be deleted forever and cannot be recovered.`, async () => {
+          await chrome.runtime.sendMessage({ action: 'permanent-delete', trashId });
+          await loadTrash();
+          renderTrashView();
+          showToast('Item permanently deleted.');
+        });
+        $('confirmOk').textContent = 'Delete forever';
+      });
+    });
+  }
+
+  function renderTrashCard(trashItem) {
+    const { trashId, type, deletedAt, data } = trashItem;
+    const title = escHtml(data.title || data.url || 'Untitled');
+    const subtitle = type === 'bookmark' ? escHtml(data.url || '') : (type === 'note' ? escHtml(data.content || '') : escHtml(data.notes || ''));
+    const deletedDate = formatDate(deletedAt);
+    const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+    const typeIcon = type === 'note'
+      ? `<svg class="card-type-icon" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></svg>`
+      : type === 'task'
+      ? `<svg class="card-type-icon" viewBox="0 0 24 24" fill="none"><polyline points="9,11 12,14 22,4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : `<svg class="card-type-icon" viewBox="0 0 24 24" fill="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+    return `
+      <article class="bookmark-card trash-card">
+        <div class="card-header">
+          ${typeIcon}
+          <div class="card-title-wrap">
+            <span class="card-title" title="${escAttr(data.title || data.url || '')}">${title}</span>
+            <span class="trash-type-badge">${escHtml(typeLabel)}</span>
+          </div>
+        </div>
+        ${subtitle ? `<p class="card-notes trash-subtitle">${subtitle.slice(0, 120)}${subtitle.length > 120 ? '…' : ''}</p>` : ''}
+        <div class="card-footer">
+          <span class="card-date">Deleted ${escHtml(deletedDate)}</span>
+          <div class="card-actions">
+            <button class="btn btn-ghost btn-sm trash-restore-btn" data-trash-id="${escAttr(trashId)}" title="Restore">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Restore
+            </button>
+            <button class="card-action-btn card-delete-btn delete trash-delete-btn" data-trash-id="${escAttr(trashId)}" title="Delete forever">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke-linecap="round"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  $('emptyTrashBtn').addEventListener('click', () => {
+    const count = allTrashItems.length;
+    openConfirmModal('Empty Trash?', `All ${count} item(s) will be permanently deleted and cannot be recovered.`, async () => {
+      await chrome.runtime.sendMessage({ action: 'empty-trash' });
+      await loadTrash();
+      renderTrashView();
+      showToast('Trash emptied.');
+    });
+    $('confirmOk').textContent = 'Empty Trash';
+  });
 
   // ── Edit modal ─────────────────────────────────────────────────────────────
 
@@ -1552,6 +1706,9 @@
     ];
     if (refreshActions.includes(message.action)) {
       loadAllObjects();
+    }
+    if (message.action === 'trash-updated') {
+      loadTrash().then(() => { if (viewingTrash) renderTrashView(); });
     }
   });
 

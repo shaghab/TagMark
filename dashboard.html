@@ -46,6 +46,16 @@
         Pinned
         <span class="nav-count" id="pinnedCount">0</span>
       </button>
+      <button class="nav-item trash-nav-item" data-filter="trash" id="filterTrash">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Trash
+        <span class="nav-count" id="trashCount">0</span>
+      </button>
     </nav>
 
     <div class="sidebar-middle">
@@ -172,6 +182,12 @@
           <option value="score">Score (high → low)</option>
         </select>
       </div>
+    </div>
+
+    <!-- Trash toolbar (shown when viewing trash) -->
+    <div class="trash-toolbar" id="trashToolbar" style="display:none">
+      <span class="trash-toolbar-label">Trash — deleted items can be restored or permanently removed</span>
+      <button class="btn btn-ghost btn-sm" id="emptyTrashBtn">Empty Trash</button>
     </div>
 
     <!-- Active tag filters row -->
@@ -448,6 +464,22 @@
           <button type="submit" class="btn btn-primary">Save task</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Confirm delete modal -->
+  <div class="modal-overlay confirm-overlay" id="confirmOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal confirm-modal" id="confirmModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="confirmTitle">Delete item?</h2>
+      </div>
+      <div class="confirm-body">
+        <p class="confirm-msg" id="confirmMsg">This item will be moved to Trash. You can restore it later.</p>
+      </div>
+      <div class="modal-actions confirm-actions">
+        <button type="button" class="btn btn-ghost" id="confirmCancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmOk">Move to Trash</button>
+      </div>
     </div>
   </div>
 

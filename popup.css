@@ -550,6 +550,67 @@ body {
   color: #fff;
 }
 
+.btn-ghost {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ── Popup confirm overlay ───────────────────────────── */
+
+.popup-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  backdrop-filter: blur(3px);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.popup-confirm-box {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  padding: 20px;
+  margin: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.popup-confirm-msg {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.popup-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.popup-confirm-actions .btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
 /* ── Toast ──────────────────────────────────────────── */
 
 .toast {

@@ -10,8 +10,12 @@ const FOLDERS_KEY  = 'tagmark_folders';  // array of folder objects
 
 const NOTE_INDEX_KEY = 'tagmark_index_note'; // ordered array of note IDs
 const NOTE_PREFIX    = 'tagmark_note_';      // per-note key: tagmark_note_<id>
-const TASK_INDEX_KEY = 'tagmark_index_task'; // ordered array of task IDs
-const TASK_PREFIX    = 'tagmark_task_';      // per-task key: tagmark_task_<id>
+const TASK_INDEX_KEY  = 'tagmark_index_task'; // ordered array of task IDs
+const TASK_PREFIX     = 'tagmark_task_';      // per-task key: tagmark_task_<id>
+
+const TRASH_INDEX_KEY = 'tagmark_trash_index'; // ordered array of trash IDs
+const TRASH_PREFIX    = 'tagmark_trash_';       // per-item key: tagmark_trash_<id>
+const TRASH_MAX_ITEMS = 50;                     // cap to avoid quota exhaustion
 
 const MAX_FOLDER_NAME_LEN = 100;
 const MAX_CONTENT_LEN     = 5000;  // note content cap — chrome.storage.sync is 8 KB per item
@@ -549,6 +553,75 @@ async function deleteTaskById(id) {
   return { success: true };
 }
 
+// ── Trash Storage Helpers ───────────────────────────────────────────────────
+//
+// Layout: TRASH_INDEX_KEY holds an array of { trashId, type, deletedAt }
+// objects (metadata only). The raw item data is stored under TRASH_PREFIX +
+// trashId with no extra wrapper, so items that were already near the 8 KB
+// per-key limit are not pushed over it by trash metadata overhead.
+
+async function getTrashItems() {
+  const result = await storageGet([TRASH_INDEX_KEY]);
+  const index = result[TRASH_INDEX_KEY];
+  if (!Array.isArray(index) || index.length === 0) return [];
+  const trashKeys = index.map(e => TRASH_PREFIX + e.trashId);
+  const dataResult = await storageGet(trashKeys);
+  return index
+    .map(e => {
+      const data = dataResult[TRASH_PREFIX + e.trashId];
+      return data ? { trashId: e.trashId, type: e.type, deletedAt: e.deletedAt, data } : null;
+    })
+    .filter(Boolean);
+}
+
+async function addToTrash(type, item) {
+  const result = await storageGet([TRASH_INDEX_KEY]);
+  const originalIndex = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
+
+  const trashId = generateId();
+  const trashKey = TRASH_PREFIX + trashId;
+
+  // Check per-item size before touching the index or evicting anything, so a
+  // too-large item never causes an existing trash entry to be silently lost.
+  if (syncItemSize(trashKey, item) > SYNC_ITEM_QUOTA) {
+    return null;
+  }
+
+  // Enforce max size — build the trimmed index without mutating originalIndex
+  // so rollback always has the correct pre-write state to restore.
+  const trimmed = originalIndex.length >= TRASH_MAX_ITEMS
+    ? originalIndex.slice(0, TRASH_MAX_ITEMS - 1)
+    : originalIndex;
+  const dropped = originalIndex.slice(trimmed.length);
+
+  const entry = { trashId, type, deletedAt: Date.now() };
+  const newIndex = [entry, ...trimmed];
+  // Store metadata in the index; store only the raw item data under the
+  // per-key so the trash copy is never larger than the original.
+  // Catch quota errors (total sync storage full) the same way as the
+  // per-item size check: return null so callers fall back to permanent
+  // deletion rather than letting the exception abort the delete entirely.
+  try {
+    await storageSet({ [TRASH_INDEX_KEY]: newIndex, [trashKey]: item });
+  } catch (err) {
+    // Restore the original index so no existing entries are hidden.
+    await storageSet({ [TRASH_INDEX_KEY]: originalIndex }).catch(() => {});
+    return null;
+  }
+  // Only remove evicted data-keys after the write succeeds.
+  if (dropped.length) {
+    await storageRemove(dropped.map(e => TRASH_PREFIX + e.trashId)).catch(() => {});
+  }
+  return entry;
+}
+
+async function removeFromTrash(trashId) {
+  const result = await storageGet([TRASH_INDEX_KEY]);
+  const index = Array.isArray(result[TRASH_INDEX_KEY]) ? result[TRASH_INDEX_KEY] : [];
+  await storageSet({ [TRASH_INDEX_KEY]: index.filter(e => e.trashId !== trashId) });
+  await storageRemove([TRASH_PREFIX + trashId]);
+}
+
 function generateId() {
   // Use CSPRNG instead of Math.random() to prevent ID prediction (A02).
   const buf = new Uint32Array(2);
@@ -679,12 +752,22 @@ async function handleMessage(message) {
 
     case 'delete-bookmark': {
       const bookmarks = await getBookmarks();
-      const deletedUrl = bookmarks.find(b => b.id === message.id)?.url;
-      const filtered = bookmarks.filter(b => b.id !== message.id);
-      await saveBookmarks(filtered);
+      const bm = bookmarks.find(b => b.id === message.id);
+      if (!bm) return { success: false };
+      // Write to Trash before removing from the main list. If the item is too
+      // large for the trash key, addToTrash returns null and we skip straight
+      // to permanent deletion rather than blocking the delete entirely.
+      const trashEntry = await addToTrash('bookmark', bm);
+      try {
+        const filtered = bookmarks.filter(b => b.id !== message.id);
+        await saveBookmarks(filtered);
+      } catch (err) {
+        if (trashEntry) await removeFromTrash(trashEntry.trashId).catch(() => {});
+        throw err;
+      }
       notifyDashboard('bookmark-deleted');
-      if (deletedUrl) await refreshIconForUrl(deletedUrl, false);
-      return { success: true };
+      if (bm.url) await refreshIconForUrl(bm.url, false);
+      return { success: true, trashed: trashEntry !== null };
     }
 
     case 'update-bookmark': {
@@ -876,9 +959,18 @@ async function handleMessage(message) {
     }
 
     case 'delete-note': {
-      const result = await deleteNoteById(message.id);
-      notifyDashboard('note-deleted');
-      return result;
+      const noteKey = NOTE_PREFIX + message.id;
+      const stored = (await storageGet([noteKey]))[noteKey];
+      let noteTrashEntry;
+      if (stored) noteTrashEntry = await addToTrash('note', { ...stored, id: message.id });
+      try {
+        await deleteNoteById(message.id);
+        notifyDashboard('note-deleted');
+        return { success: true, trashed: noteTrashEntry !== null };
+      } catch (err) {
+        if (noteTrashEntry) await removeFromTrash(noteTrashEntry.trashId).catch(() => {});
+        throw err;
+      }
     }
 
     case 'toggle-pin-note': {
@@ -915,9 +1007,18 @@ async function handleMessage(message) {
     }
 
     case 'delete-task': {
-      const result = await deleteTaskById(message.id);
-      notifyDashboard('task-deleted');
-      return result;
+      const taskKey = TASK_PREFIX + message.id;
+      const stored = (await storageGet([taskKey]))[taskKey];
+      let taskTrashEntry;
+      if (stored) taskTrashEntry = await addToTrash('task', { ...stored, id: message.id });
+      try {
+        await deleteTaskById(message.id);
+        notifyDashboard('task-deleted');
+        return { success: true, trashed: taskTrashEntry !== null };
+      } catch (err) {
+        if (taskTrashEntry) await removeFromTrash(taskTrashEntry.trashId).catch(() => {});
+        throw err;
+      }
     }
 
     case 'toggle-pin-task': {
@@ -928,6 +1029,66 @@ async function handleMessage(message) {
       await storageSet({ [taskKey]: compactBookmark(updated) });
       notifyDashboard('task-updated');
       return { pinned: updated.pinned };
+    }
+
+    case 'get-trash':
+      return await getTrashItems();
+
+    case 'restore-from-trash': {
+      // Look up the metadata from the index and the raw data from the per-key.
+      const indexResult = await storageGet([TRASH_INDEX_KEY]);
+      const index = Array.isArray(indexResult[TRASH_INDEX_KEY]) ? indexResult[TRASH_INDEX_KEY] : [];
+      const entry = index.find(e => e.trashId === message.trashId);
+      if (!entry) return { success: false };
+      const dataResult = await storageGet([TRASH_PREFIX + message.trashId]);
+      const data = dataResult[TRASH_PREFIX + message.trashId];
+      if (!data) return { success: false };
+      const { type } = entry;
+      if (type === 'bookmark') {
+        const bookmarks = await getBookmarks();
+        const sameId  = bookmarks.find(b => b.id  === data.id);
+        const sameUrl = data.url && bookmarks.find(b => b.url === data.url);
+        if (sameId || sameUrl) {
+          // Already present (by ID) or a newer bookmark claimed the same URL.
+          // Remove the trash entry without restoring to avoid a duplicate card.
+          await removeFromTrash(message.trashId);
+          notifyDashboard('trash-updated');
+          return { success: false, reason: 'duplicate' };
+        }
+        bookmarks.unshift(data);
+        await saveBookmarks(bookmarks);
+        if (data.url) await refreshIconForUrl(data.url, true);
+        notifyDashboard('bookmark-added');
+      } else if (type === 'note') {
+        const ids = (await storageGet([NOTE_INDEX_KEY]))[NOTE_INDEX_KEY] || [];
+        if (!ids.includes(data.id)) {
+          await storageSet({ [NOTE_INDEX_KEY]: [data.id, ...ids], [NOTE_PREFIX + data.id]: compactBookmark(data) });
+        }
+        notifyDashboard('note-added');
+      } else if (type === 'task') {
+        const ids = (await storageGet([TASK_INDEX_KEY]))[TASK_INDEX_KEY] || [];
+        if (!ids.includes(data.id)) {
+          await storageSet({ [TASK_INDEX_KEY]: [data.id, ...ids], [TASK_PREFIX + data.id]: compactBookmark(data) });
+        }
+        notifyDashboard('task-added');
+      }
+      await removeFromTrash(message.trashId);
+      notifyDashboard('trash-updated');
+      return { success: true };
+    }
+
+    case 'permanent-delete': {
+      await removeFromTrash(message.trashId);
+      notifyDashboard('trash-updated');
+      return { success: true };
+    }
+
+    case 'empty-trash': {
+      const result2 = await storageGet([TRASH_INDEX_KEY]);
+      const index2 = Array.isArray(result2[TRASH_INDEX_KEY]) ? result2[TRASH_INDEX_KEY] : [];
+      await storageRemove([TRASH_INDEX_KEY, ...index2.map(e => TRASH_PREFIX + e.trashId)]);
+      notifyDashboard('trash-updated');
+      return { success: true, count: index2.length };
     }
 
     case 'get-storage-usage': {
