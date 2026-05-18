@@ -743,6 +743,7 @@
 
   $('filterTrash').addEventListener('click', async () => {
     viewingTrash = true;
+    activeFilter = 'all'; // reset so leaving Trash via type tabs shows all items
     $('filterTrash').classList.add('active');
     filterAll.classList.remove('active');
     filterPinned.classList.remove('active');
