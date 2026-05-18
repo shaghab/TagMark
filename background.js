@@ -599,7 +599,16 @@ async function addToTrash(type, item) {
   index = [entry, ...index];
   // Store metadata in the index; store only the raw item data under the
   // per-key so the trash copy is never larger than the original.
-  await storageSet({ [TRASH_INDEX_KEY]: index, [trashKey]: item });
+  // Catch quota errors (total sync storage full) the same way as the
+  // per-item size check: return null so callers fall back to permanent
+  // deletion rather than letting the exception abort the delete entirely.
+  try {
+    await storageSet({ [TRASH_INDEX_KEY]: index, [trashKey]: item });
+  } catch (err) {
+    // Roll back the optimistic index update so no orphaned index entry remains.
+    await storageSet({ [TRASH_INDEX_KEY]: index.filter(e => e.trashId !== trashId) }).catch(() => {});
+    return null;
+  }
   return entry;
 }
 
