@@ -1068,7 +1068,7 @@
   }
 
   function renderCard(b) {
-    const faviconSrc = escAttr(googleFaviconUrl(b.url) || b.favIconUrl || '');
+    const faviconSrc = escAttr(b.favIconUrl || googleFaviconUrl(b.url));
     const faviconHiddenClass = faviconSrc ? '' : ' hidden';
     const faviconFallHiddenClass = faviconSrc ? ' hidden' : '';
 
