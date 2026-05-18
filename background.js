@@ -1024,11 +1024,18 @@ async function handleMessage(message) {
       const { type } = entry;
       if (type === 'bookmark') {
         const bookmarks = await getBookmarks();
-        if (!bookmarks.find(b => b.id === data.id)) {
-          bookmarks.unshift(data);
-          await saveBookmarks(bookmarks);
-          if (data.url) await refreshIconForUrl(data.url, true);
+        const sameId  = bookmarks.find(b => b.id  === data.id);
+        const sameUrl = data.url && bookmarks.find(b => b.url === data.url);
+        if (sameId || sameUrl) {
+          // Already present (by ID) or a newer bookmark claimed the same URL.
+          // Remove the trash entry without restoring to avoid a duplicate card.
+          await removeFromTrash(message.trashId);
+          notifyDashboard('trash-updated');
+          return { success: false, reason: 'duplicate' };
         }
+        bookmarks.unshift(data);
+        await saveBookmarks(bookmarks);
+        if (data.url) await refreshIconForUrl(data.url, true);
         notifyDashboard('bookmark-added');
       } else if (type === 'note') {
         const ids = (await storageGet([NOTE_INDEX_KEY]))[NOTE_INDEX_KEY] || [];

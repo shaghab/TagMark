@@ -1369,10 +1369,14 @@
 
     bookmarkGrid.querySelectorAll('.trash-restore-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        await chrome.runtime.sendMessage({ action: 'restore-from-trash', trashId: btn.dataset.trashId });
+        const result = await chrome.runtime.sendMessage({ action: 'restore-from-trash', trashId: btn.dataset.trashId });
         await loadTrash();
         await loadAllObjects();
-        showToast('Item restored.');
+        if (result && result.reason === 'duplicate') {
+          showToast('A bookmark with this URL already exists — trash entry removed.', 'error');
+        } else {
+          showToast('Item restored.');
+        }
       });
     });
 
