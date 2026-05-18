@@ -585,11 +585,21 @@ async function addToTrash(type, item) {
   }
 
   const trashId = generateId();
+  const trashKey = TRASH_PREFIX + trashId;
+
+  // Trash key prefixes are longer than item key prefixes, so an item already
+  // near the 8 KB per-key limit can exceed quota when stored under the trash
+  // key. Skip the trash write rather than blocking deletion entirely; return
+  // null so callers know no entry was created.
+  if (syncItemSize(trashKey, item) > SYNC_ITEM_QUOTA) {
+    return null;
+  }
+
   const entry = { trashId, type, deletedAt: Date.now() };
   index = [entry, ...index];
   // Store metadata in the index; store only the raw item data under the
   // per-key so the trash copy is never larger than the original.
-  await storageSet({ [TRASH_INDEX_KEY]: index, [TRASH_PREFIX + trashId]: item });
+  await storageSet({ [TRASH_INDEX_KEY]: index, [trashKey]: item });
   return entry;
 }
 
@@ -732,20 +742,20 @@ async function handleMessage(message) {
       const bookmarks = await getBookmarks();
       const bm = bookmarks.find(b => b.id === message.id);
       if (!bm) return { success: false };
-      // Write to Trash before removing from the main list so a quota-exceeded
-      // error on the trash write leaves the original bookmark intact.
+      // Write to Trash before removing from the main list. If the item is too
+      // large for the trash key, addToTrash returns null and we skip straight
+      // to permanent deletion rather than blocking the delete entirely.
       const trashEntry = await addToTrash('bookmark', bm);
       try {
         const filtered = bookmarks.filter(b => b.id !== message.id);
         await saveBookmarks(filtered);
       } catch (err) {
-        // Roll back the trash entry so the user is not left with a duplicate.
-        await removeFromTrash(trashEntry.trashId).catch(() => {});
+        if (trashEntry) await removeFromTrash(trashEntry.trashId).catch(() => {});
         throw err;
       }
       notifyDashboard('bookmark-deleted');
       if (bm.url) await refreshIconForUrl(bm.url, false);
-      return { success: true };
+      return { success: true, trashed: trashEntry !== null };
     }
 
     case 'update-bookmark': {
@@ -942,9 +952,9 @@ async function handleMessage(message) {
       let noteTrashEntry;
       if (stored) noteTrashEntry = await addToTrash('note', { ...stored, id: message.id });
       try {
-        const result = await deleteNoteById(message.id);
+        await deleteNoteById(message.id);
         notifyDashboard('note-deleted');
-        return result;
+        return { success: true, trashed: noteTrashEntry !== null };
       } catch (err) {
         if (noteTrashEntry) await removeFromTrash(noteTrashEntry.trashId).catch(() => {});
         throw err;
@@ -990,9 +1000,9 @@ async function handleMessage(message) {
       let taskTrashEntry;
       if (stored) taskTrashEntry = await addToTrash('task', { ...stored, id: message.id });
       try {
-        const result = await deleteTaskById(message.id);
+        await deleteTaskById(message.id);
         notifyDashboard('task-deleted');
-        return result;
+        return { success: true, trashed: taskTrashEntry !== null };
       } catch (err) {
         if (taskTrashEntry) await removeFromTrash(taskTrashEntry.trashId).catch(() => {});
         throw err;

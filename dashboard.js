@@ -199,6 +199,9 @@
   }
 
   function switchObjectType(type) {
+    viewingTrash = false;
+    $('filterTrash').classList.remove('active');
+    $('trashToolbar').style.display = 'none';
     activeObjectType = type;
     document.querySelectorAll('.type-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.type === type);
@@ -1165,9 +1168,9 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-bookmark', id });
+    const result = await chrome.runtime.sendMessage({ action: 'delete-bookmark', id });
     await loadAllObjects();
-    showToast('Bookmark deleted.');
+    showToast(result && result.trashed === false ? 'Bookmark permanently deleted (too large for Trash).' : 'Bookmark moved to Trash.');
   }
 
   // ── Note & Task card renderers ─────────────────────────────────────────────
@@ -1293,9 +1296,9 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-note', id });
+    const noteResult = await chrome.runtime.sendMessage({ action: 'delete-note', id });
     await loadAllObjects();
-    showToast('Note deleted.');
+    showToast(noteResult && noteResult.trashed === false ? 'Note permanently deleted (too large for Trash).' : 'Note moved to Trash.');
   }
 
   async function deleteTask(id) {
@@ -1306,9 +1309,9 @@
       card.style.transform = 'scale(0.95)';
       await new Promise(r => setTimeout(r, 200));
     }
-    await chrome.runtime.sendMessage({ action: 'delete-task', id });
+    const taskResult = await chrome.runtime.sendMessage({ action: 'delete-task', id });
     await loadAllObjects();
-    showToast('Task deleted.');
+    showToast(taskResult && taskResult.trashed === false ? 'Task permanently deleted (too large for Trash).' : 'Task moved to Trash.');
   }
 
   // ── Confirm modal ──────────────────────────────────────────────────────────
