@@ -79,14 +79,17 @@ function drawBookmarkIcon(size, bookmarked) {
 }
 
 function setTabIcon(tabId, isBookmarked) {
+  // Use the callback form and explicitly consume chrome.runtime.lastError so
+  // Chrome does not log "Unchecked runtime.lastError: No tab with id" in the
+  // extension error panel when a tab closes between the query and the API call.
   if (isBookmarked) {
     const imageData = {};
     for (const size of [16, 32, 48, 128]) {
       imageData[size] = drawBookmarkIcon(size, true);
     }
-    chrome.action.setIcon({ tabId, imageData }).catch(() => {});
+    chrome.action.setIcon({ tabId, imageData }, () => void chrome.runtime.lastError);
   } else {
-    chrome.action.setIcon({ tabId, path: DEFAULT_ICON_PATHS }).catch(() => {});
+    chrome.action.setIcon({ tabId, path: DEFAULT_ICON_PATHS }, () => void chrome.runtime.lastError);
   }
 }
 
@@ -166,11 +169,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Update toolbar icon for the saved tab
   setTabIcon(tab.id, true);
 
-  // Show badge briefly
-  chrome.action.setBadgeText({ text: '✓', tabId: tab.id });
-  chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
+  // Show badge briefly — use callback form to consume lastError in case the
+  // tab is closed before the 2-second timer fires.
+  chrome.action.setBadgeText({ text: '✓', tabId: tab.id }, () => void chrome.runtime.lastError);
+  chrome.action.setBadgeBackgroundColor({ color: '#6366f1' }, () => void chrome.runtime.lastError);
   setTimeout(() => {
-    chrome.action.setBadgeText({ text: '', tabId: tab.id });
+    chrome.action.setBadgeText({ text: '', tabId: tab.id }, () => void chrome.runtime.lastError);
   }, 2000);
 });
 
@@ -637,7 +641,10 @@ async function notifyDashboard(action) {
   const tabs = await chrome.tabs.query({});
   tabs.forEach(tab => {
     if (tab.url && tab.url.startsWith(dashboardUrl)) {
-      chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
+      // Use the callback form and explicitly read lastError so Chrome does not
+      // log "Unchecked runtime.lastError: No tab with id" when a dashboard tab
+      // closes between the query and the sendMessage call.
+      chrome.tabs.sendMessage(tab.id, { action }, () => void chrome.runtime.lastError);
     }
   });
 }
