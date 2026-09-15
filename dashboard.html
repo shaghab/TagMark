@@ -78,7 +78,11 @@
       </div>
 
       <div id="gtdSection">
-        <div class="sidebar-section-label">GTD Status</div>
+        <div class="sidebar-section-label gtd-section-label">
+          GTD Status
+          <button class="hide-closed-btn" id="hideClosedBtn" aria-pressed="false"
+                  title="Hide items marked Done, Dropped, Archived or Reference">Hide closed</button>
+        </div>
         <div class="gtd-filter-list" id="gtdFilterList">
           <!-- GTD filter items rendered by JS -->
         </div>

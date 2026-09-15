@@ -1554,6 +1554,42 @@ body {
   font-weight: 500;
 }
 
+/* "Hide closed" toggle in the GTD Status section header */
+.sidebar-section-label.gtd-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.hide-closed-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.hide-closed-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.hide-closed-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* GTD status dot colors */
 .status-filter-item .status-dot {
   width: 8px;
@@ -1691,6 +1727,25 @@ body {
 .gtd-chip.gtd-someday { background: #f5f3ff; color: #5b21b6; }
 .gtd-chip.gtd-waiting { background: #eff6ff; color: #1d4ed8; }
 .gtd-chip.gtd-done    { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.hide-closed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: opacity var(--transition);
+  user-select: none;
+}
+
+.hide-closed-chip:hover {
+  opacity: 0.75;
+}
 
 .gtd-chip.gtd-unset,
 .type-chip.type-unset   { background: var(--bg-tertiary); color: var(--text-secondary); }

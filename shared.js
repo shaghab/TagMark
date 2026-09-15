@@ -80,6 +80,10 @@ const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archive
 const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
+// Statuses that mark an item as no longer actionable. The dashboard's
+// "Hide closed" toggle filters these out of the grid.
+const CLOSED_GTD_STATUSES = ['done', 'dropped', 'archived', 'reference'];
+
 // Sentinel used by the sidebar filters to select items that carry no GTD status
 // or no content type. Never stored on an item — it only ever lives in filter state.
 const UNSET_FILTER = '__unset__';
