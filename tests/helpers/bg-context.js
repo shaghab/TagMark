@@ -99,12 +99,17 @@ function createBgContext() {
       onClicked: { addListener: () => {} },
     },
     tabs: {
-      query:       (_, cb) => cb([]),
+      // background.js calls this both callback-style and promise-style.
+      query:       (_, cb) => (typeof cb === 'function' ? cb([]) : Promise.resolve([])),
       sendMessage: () => Promise.resolve(),
+      get:         () => Promise.resolve({}),
+      onActivated: { addListener: () => {} },
+      onUpdated:   { addListener: () => {} },
     },
     action: {
       setBadgeText:            () => {},
       setBadgeBackgroundColor: () => {},
+      setIcon:                 () => {},
     },
   };
 
@@ -115,6 +120,8 @@ function createBgContext() {
     chrome,
     // WHATWG URL (used by isValidUrl, sanitizeFavIconUrl, formatUrl)
     URL,
+    // Web Crypto (used by generateId)
+    crypto,
     // Core language built-ins used by background.js
     Date,
     Math,

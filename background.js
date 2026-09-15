@@ -731,6 +731,268 @@ function sanitizeBookmark(raw) {
   };
 }
 
+// ── Import sanitizers (notes, tasks, folders) ───────────────────────────────
+
+// Imported timestamps are untrusted; fall back to "now" for anything missing
+// or nonsensical so the item still sorts sensibly in the dashboard.
+function importTimestamp(value, fallback) {
+  return typeof value === 'number' && value > 0 ? value : fallback;
+}
+
+function sanitizeNote(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const title   = typeof raw.title === 'string' ? raw.title.trim().slice(0, MAX_TITLE_LEN) : '';
+  const content = typeof raw.content === 'string' ? raw.content.slice(0, MAX_CONTENT_LEN) : '';
+  // A note with neither a title nor a body carries no information — drop it.
+  if (!title && !content) return null;
+
+  const now = Date.now();
+  return {
+    id:        generateId(),
+    title:     title || 'Untitled',
+    content,
+    tags:      normalizeTags(raw.tags),
+    pinned:    Boolean(raw.pinned),
+    folderId:  typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
+    createdAt: importTimestamp(raw.createdAt, now),
+    updatedAt: importTimestamp(raw.updatedAt, now)
+  };
+}
+
+function sanitizeTask(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, MAX_TITLE_LEN) : '';
+  if (!title) return null;
+
+  const now = Date.now();
+  return {
+    id:          generateId(),
+    title,
+    notes:       typeof raw.notes === 'string' ? raw.notes.slice(0, MAX_NOTES_LEN) : '',
+    tags:        normalizeTags(raw.tags),
+    pinned:      Boolean(raw.pinned),
+    folderId:    typeof raw.folderId === 'string' && raw.folderId ? raw.folderId : null,
+    gtdStatus:   GTD_STATUSES.includes(raw.gtdStatus)     ? raw.gtdStatus  : null,
+    urgency:     PRIORITY_LEVELS.includes(raw.urgency)    ? raw.urgency    : null,
+    importance:  PRIORITY_LEVELS.includes(raw.importance) ? raw.importance : null,
+    createdAt:   importTimestamp(raw.createdAt, now),
+    updatedAt:   importTimestamp(raw.updatedAt, now)
+  };
+}
+
+function sanitizeFolder(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_FOLDER_NAME_LEN) : '';
+  if (!name) return null;
+
+  return {
+    id:        generateId(),
+    name,
+    parentId:  typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null,
+    createdAt: importTimestamp(raw.createdAt, Date.now())
+  };
+}
+
+// ── Import ──────────────────────────────────────────────────────────────────
+
+// Hard cap per object type. The dashboard caps the file before sending, but
+// the background must not trust its callers either (CWE-400).
+const MAX_IMPORT_ITEMS = 10000;
+
+// Separator used to build "same item" dedupe keys. A NUL byte cannot appear in
+// a title or body, so it cannot be spoofed to force a false match.
+const DEDUPE_SEP = String.fromCharCode(0);
+
+// Merges imported folders into the existing tree.
+//
+// Imported folder ids are rewritten (sanitizeFolder assigns fresh ones), so
+// bookmarks/notes/tasks referencing the old ids need a translation table. A
+// folder whose name and resolved parent already exist is reused rather than
+// duplicated, which keeps re-importing the same backup idempotent.
+//
+// Returns { idMap, added } where idMap maps old folder id to resolved id.
+async function importFolders(rawFolders) {
+  const existing = await getFolders();
+  const merged   = [...existing];
+  const idMap    = new Map();
+
+  // Parents must resolve before their children, so walk the list repeatedly
+  // until no further progress is possible.
+  let pending  = rawFolders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
+  let rootOnly = false;
+
+  while (pending.length) {
+    const deferred = [];
+    let progressed = false;
+
+    for (const raw of pending) {
+      const oldParent = typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null;
+      let newParent = null;
+
+      if (oldParent) {
+        if (idMap.has(oldParent)) {
+          newParent = idMap.get(oldParent);
+        } else if (!rootOnly && pending.some(p => p !== raw && p.id === oldParent)) {
+          deferred.push(raw); // parent is still queued — retry on the next pass
+          continue;
+        }
+        // Unknown or cyclic parent — fall back to a root folder.
+      }
+
+      progressed = true;
+      const clean = sanitizeFolder(raw);
+      if (!clean) continue;
+      clean.parentId = newParent;
+
+      const match = merged.find(f => f.name === clean.name && (f.parentId || null) === newParent);
+      if (!match) merged.push(clean);
+      if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, match ? match.id : clean.id);
+    }
+
+    // A pass that resolved nothing means the remainder is a parent cycle.
+    // Flatten those to root on the next pass rather than looping forever.
+    if (!progressed && deferred.length) rootOnly = true;
+    pending = deferred;
+  }
+
+  if (merged.length !== existing.length) await saveFolders(merged);
+  return { idMap, added: merged.length - existing.length };
+}
+
+// Builds a folderId translator. Imported ids go through idMap; ids that
+// already exist locally are kept as-is; anything else is dropped to null so an
+// item never points at a folder that does not exist.
+function makeFolderResolver(idMap, existingFolderIds) {
+  return folderId => {
+    if (typeof folderId !== 'string' || !folderId) return null;
+    if (idMap.has(folderId)) return idMap.get(folderId);
+    if (existingFolderIds.has(folderId)) return folderId;
+    return null;
+  };
+}
+
+// Merges imported bookmarks, updating in place when the URL already exists.
+async function importBookmarkList(rawList, resolveFolder) {
+  const existing = await getBookmarks();
+  const merged   = [...existing];
+  let count = 0;
+
+  for (const raw of rawList) {
+    const b = sanitizeBookmark(raw);
+    if (!b) continue; // skip invalid entries
+    b.folderId = resolveFolder(b.folderId);
+    const idx = merged.findIndex(e => e.url === b.url);
+    if (idx >= 0) {
+      merged[idx] = { ...merged[idx], ...b, id: merged[idx].id, createdAt: merged[idx].createdAt };
+    } else {
+      merged.push(b);
+    }
+    count++;
+  }
+
+  if (count) await saveBookmarks(merged);
+  return count;
+}
+
+// Notes and tasks have no natural unique key the way bookmarks have a URL, so
+// an identical title + body is treated as the same item and skipped. That
+// makes re-importing the same backup a no-op instead of doubling everything.
+async function importNoteList(rawList, resolveFolder) {
+  const existing = await getNotes();
+  const seen     = new Set(existing.map(n => n.title + DEDUPE_SEP + n.content));
+  const result   = await storageGet([NOTE_INDEX_KEY]);
+  const ids      = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+
+  const toSet  = {};
+  const newIds = [];
+
+  for (const raw of rawList) {
+    const note = sanitizeNote(raw);
+    if (!note) continue;
+    const dedupeKey = note.title + DEDUPE_SEP + note.content;
+    if (seen.has(dedupeKey)) continue;
+    note.folderId = resolveFolder(note.folderId);
+
+    const key    = NOTE_PREFIX + note.id;
+    const packed = compactBookmark(note);
+    // Oversized entries would be rejected by chrome.storage.sync; skip them
+    // rather than failing the whole import.
+    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) continue;
+
+    toSet[key] = packed;
+    newIds.push(note.id);
+    seen.add(dedupeKey);
+  }
+
+  if (!newIds.length) return 0;
+  toSet[NOTE_INDEX_KEY] = [...newIds, ...ids];
+  await storageSet(toSet);
+  return newIds.length;
+}
+
+async function importTaskList(rawList, resolveFolder) {
+  const existing = await getTasks();
+  const seen     = new Set(existing.map(t => t.title + DEDUPE_SEP + (t.notes || '')));
+  const result   = await storageGet([TASK_INDEX_KEY]);
+  const ids      = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+
+  const toSet  = {};
+  const newIds = [];
+
+  for (const raw of rawList) {
+    const task = sanitizeTask(raw);
+    if (!task) continue;
+    const dedupeKey = task.title + DEDUPE_SEP + task.notes;
+    if (seen.has(dedupeKey)) continue;
+    task.folderId = resolveFolder(task.folderId);
+
+    const key    = TASK_PREFIX + task.id;
+    const packed = compactBookmark(task);
+    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) continue;
+
+    toSet[key] = packed;
+    newIds.push(task.id);
+    seen.add(dedupeKey);
+  }
+
+  if (!newIds.length) return 0;
+  toSet[TASK_INDEX_KEY] = [...newIds, ...ids];
+  await storageSet(toSet);
+  return newIds.length;
+}
+
+// Imports any combination of the four object types in one pass. Folders are
+// merged first so items can be remapped onto their resolved ids.
+async function importData(payload) {
+  const counts = { bookmarks: 0, notes: 0, tasks: 0, folders: 0 };
+  const list = key => (Array.isArray(payload[key]) ? payload[key].slice(0, MAX_IMPORT_ITEMS) : []);
+
+  let idMap = new Map();
+  const folders = list('folders');
+  if (folders.length) {
+    const res = await importFolders(folders);
+    idMap = res.idMap;
+    counts.folders = res.added;
+  }
+
+  const existingFolderIds = new Set((await getFolders()).map(f => f.id));
+  const resolveFolder = makeFolderResolver(idMap, existingFolderIds);
+
+  const bookmarks = list('bookmarks');
+  if (bookmarks.length) counts.bookmarks = await importBookmarkList(bookmarks, resolveFolder);
+
+  const notes = list('notes');
+  if (notes.length) counts.notes = await importNoteList(notes, resolveFolder);
+
+  const tasks = list('tasks');
+  if (tasks.length) counts.tasks = await importTaskList(tasks, resolveFolder);
+
+  return counts;
+}
+
 // ── Message Handler ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -918,29 +1180,41 @@ async function handleMessage(message) {
       return Array.from(tagSet).sort();
     }
 
+    // Legacy bookmarks-only import. Kept so export files written by older
+    // versions of TagMark still load.
     case 'import-bookmarks': {
-      const existing = await getBookmarks();
-      const toImport = Array.isArray(message.bookmarks) ? message.bookmarks : [];
-      const merged = [...existing];
-      let imported = 0;
-      for (const raw of toImport) {
-        const b = sanitizeBookmark(raw);
-        if (!b) continue; // skip invalid entries
-        const idx = merged.findIndex(e => e.url === b.url);
-        if (idx >= 0) {
-          merged[idx] = { ...merged[idx], ...b, id: merged[idx].id, createdAt: merged[idx].createdAt };
-        } else {
-          merged.push(b);
-        }
-        imported++;
-      }
-      await saveBookmarks(merged);
+      const counts = await importData({ bookmarks: message.bookmarks });
       notifyDashboard('bookmarks-imported');
-      return { count: imported };
+      return { count: counts.bookmarks };
+    }
+
+    case 'import-data': {
+      const payload = message.data && typeof message.data === 'object' && !Array.isArray(message.data)
+        ? message.data
+        : {};
+      const counts = await importData(payload);
+      notifyDashboard('bookmarks-imported');
+      if (counts.folders) notifyDashboard('folders-updated');
+      return { counts };
     }
 
     case 'export-bookmarks':
       return await getBookmarks();
+
+    // Full export. `include` names which object types to read; anything not
+    // listed comes back as an empty array so the caller never has to guess.
+    case 'export-data': {
+      const include = Array.isArray(message.include)
+        ? message.include
+        : ['bookmarks', 'notes', 'tasks', 'folders'];
+      const [bookmarks, notes, tasks, folders] = await Promise.all([
+        include.includes('bookmarks') ? getBookmarks() : [],
+        include.includes('notes')     ? getNotes()     : [],
+        include.includes('tasks')     ? getTasks()     : [],
+        include.includes('folders')   ? getFolders()   : []
+      ]);
+      return { bookmarks, notes, tasks, folders };
+    }
 
     case 'get-notes':
       return await getNotes();
