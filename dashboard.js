@@ -21,8 +21,12 @@
   let dateTreeOpenYears  = new Set();
   let dateTreeOpenMonths = new Set();
   let activeFilter = 'all'; // 'all' | 'pinned'
-  let selectedGtdFilter  = null; // null | GTD_STATUSES value
-  let selectedTypeFilter = null; // null | CONTENT_TYPES value
+  let selectedGtdFilter  = null; // null | GTD_STATUSES value | UNSET_FILTER
+  let selectedTypeFilter = null; // null | CONTENT_TYPES value | UNSET_FILTER
+  // UI-only preference (no bookmark data), so it lives in localStorage rather
+  // than in tagmark_settings.
+  const HIDE_CLOSED_KEY = 'tagmark_hide_closed';
+  let hideClosed = localStorage.getItem(HIDE_CLOSED_KEY) === '1';
   let searchQuery = '';
   let sortOrder = 'newest';
   let editTags = [];
@@ -88,6 +92,7 @@
   const editAcDropdown   = $('editAcDropdown');
   const editNotes        = $('editNotes');
   const gtdFilterList    = $('gtdFilterList');
+  const hideClosedBtn    = $('hideClosedBtn');
   const typeFilterList   = $('typeFilterList');
   const themeToggle      = $('themeToggle');
   const importBtn        = $('importBtn');
@@ -180,11 +185,14 @@
       showToast('Could not load data. Try reloading the page.', 'error');
     }
     renderSidebar();
+    renderHideClosedBtn();
     renderGtdFilter();
     renderTypeFilter();
     renderDateTree();
     renderFolderTree();
-    renderGrid();
+    // refreshMain (not renderGrid) so the chips row reflects filter state that
+    // survives a reload, such as the persisted "Hide closed" toggle.
+    refreshMain();
     updateStorageMeter();
   }
 
@@ -336,6 +344,28 @@
 
   // ── GTD & Type sidebar filters ─────────────────────────────────────────────
 
+  // "Hide closed" toggle — drops Done / Dropped / Archived / Reference items
+  // from the grid. It is inert when one of those statuses is explicitly
+  // selected (the explicit pick wins) and in the Notes view, which has no
+  // GTD status at all.
+  function isHidingClosed() {
+    return hideClosed
+      && activeObjectType !== 'note'
+      && !CLOSED_GTD_STATUSES.includes(selectedGtdFilter);
+  }
+
+  function renderHideClosedBtn() {
+    hideClosedBtn.classList.toggle('active', hideClosed);
+    hideClosedBtn.setAttribute('aria-pressed', hideClosed ? 'true' : 'false');
+  }
+
+  hideClosedBtn.addEventListener('click', () => {
+    hideClosed = !hideClosed;
+    localStorage.setItem(HIDE_CLOSED_KEY, hideClosed ? '1' : '0');
+    renderHideClosedBtn();
+    refreshMain();
+  });
+
   function renderGtdFilter() {
     const gtdItems = activeObjectType === 'bookmark' ? allBookmarks
       : activeObjectType === 'task' ? allTasks
@@ -345,13 +375,14 @@
     gtdItems.forEach(b => {
       if (b.gtdStatus) counts[b.gtdStatus] = (counts[b.gtdStatus] || 0) + 1;
     });
+    counts[UNSET_FILTER] = gtdItems.filter(b => !b.gtdStatus).length;
     gtdFilterList.innerHTML = '';
-    GTD_STATUSES.forEach(status => {
+    [...GTD_STATUSES, UNSET_FILTER].forEach(status => {
       const count = counts[status] || 0;
       const item = document.createElement('button');
       item.className = 'status-filter-item gtd-item ' + (GTD_CSS_CLASS[status] || '') + (selectedGtdFilter === status ? ' active' : '');
       item.dataset.value = status;
-      item.innerHTML = `<span class="status-dot"></span>${escHtml(status.charAt(0).toUpperCase() + status.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(statusLabel(status))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
         selectedGtdFilter = selectedGtdFilter === status ? null : status;
         renderGtdFilter();
@@ -367,13 +398,14 @@
     typeItems.forEach(b => {
       if (b.contentType) counts[b.contentType] = (counts[b.contentType] || 0) + 1;
     });
+    counts[UNSET_FILTER] = typeItems.filter(b => !b.contentType).length;
     typeFilterList.innerHTML = '';
-    CONTENT_TYPES.forEach(type => {
+    [...CONTENT_TYPES, UNSET_FILTER].forEach(type => {
       const count = counts[type] || 0;
       const item = document.createElement('button');
       item.className = 'status-filter-item type-item ' + (TYPE_CSS_CLASS[type] || '') + (selectedTypeFilter === type ? ' active' : '');
       item.dataset.value = type;
-      item.innerHTML = `<span class="status-dot"></span>${escHtml(type.charAt(0).toUpperCase() + type.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(statusLabel(type))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
         selectedTypeFilter = selectedTypeFilter === type ? null : type;
         renderTypeFilter();
@@ -757,6 +789,9 @@
     selectedFolderFilter = null;
     selectedGtdFilter  = null;
     selectedTypeFilter = null;
+    hideClosed = false;
+    localStorage.setItem(HIDE_CLOSED_KEY, '0');
+    renderHideClosedBtn();
     renderSidebar();
     renderGtdFilter();
     renderTypeFilter();
@@ -781,8 +816,9 @@
     const hasFolderFilter = selectedFolderFilter !== null;
     const hasGtdFilter   = selectedGtdFilter !== null;
     const hasTypeFilter  = selectedTypeFilter !== null;
+    const hidingClosed   = isHidingClosed();
 
-    if (!hasTagFilters && !hasDateFilter && !hasFolderFilter && !hasGtdFilter && !hasTypeFilter) {
+    if (!hasTagFilters && !hasDateFilter && !hasFolderFilter && !hasGtdFilter && !hasTypeFilter && !hidingClosed) {
       activeFiltersRow.style.display = 'none';
       return;
     }
@@ -807,14 +843,19 @@
       : '';
 
     const gtdChipHtml = hasGtdFilter
-      ? `<span class="gtd-chip active-filter-chip ${GTD_CSS_CLASS[selectedGtdFilter] || ''}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(selectedGtdFilter.charAt(0).toUpperCase() + selectedGtdFilter.slice(1))} ×</span>`
+      ? `<span class="gtd-chip active-filter-chip ${GTD_CSS_CLASS[selectedGtdFilter] || ''}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(statusLabel(selectedGtdFilter))} ×</span>`
       : '';
 
     const typeChipHtml = hasTypeFilter
-      ? `<span class="type-chip active-filter-chip ${TYPE_CSS_CLASS[selectedTypeFilter] || ''}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(selectedTypeFilter.charAt(0).toUpperCase() + selectedTypeFilter.slice(1))} ×</span>`
+      ? `<span class="type-chip active-filter-chip ${TYPE_CSS_CLASS[selectedTypeFilter] || ''}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(statusLabel(selectedTypeFilter))} ×</span>`
       : '';
 
-    activeTagChips.innerHTML = tagChipsHtml + gtdChipHtml + typeChipHtml + dateChipHtml + folderChipHtml;
+    const hideClosedChipHtml = hidingClosed
+      ? `<span class="hide-closed-chip active-filter-chip" title="Show ${escAttr(CLOSED_GTD_STATUSES.map(statusLabel).join(', '))} again">` +
+          `Hiding ${escHtml(CLOSED_GTD_STATUSES.map(statusLabel).join(', '))} ×</span>`
+      : '';
+
+    activeTagChips.innerHTML = tagChipsHtml + gtdChipHtml + typeChipHtml + hideClosedChipHtml + dateChipHtml + folderChipHtml;
 
     activeTagChips.querySelectorAll('.tag-chip').forEach(chip => {
       chip.addEventListener('click', () => toggleTagFilter(chip.dataset.tag));
@@ -830,6 +871,14 @@
       chip.addEventListener('click', () => {
         selectedTypeFilter = null;
         renderTypeFilter();
+        refreshMain();
+      });
+    });
+    activeTagChips.querySelectorAll('.hide-closed-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        hideClosed = false;
+        localStorage.setItem(HIDE_CLOSED_KEY, '0');
+        renderHideClosedBtn();
         refreshMain();
       });
     });
@@ -909,13 +958,25 @@
       list = list.filter(b => folderIds.has(b.folderId));
     }
 
-    // Filter by GTD status (only applies to bookmarks and tasks)
-    if (selectedGtdFilter) {
+    // Filter by GTD status (only applies to bookmarks and tasks).
+    // UNSET_FILTER matches items that carry no GTD status at all.
+    if (selectedGtdFilter === UNSET_FILTER) {
+      list = list.filter(b => b.objectType !== 'note' && !b.gtdStatus);
+    } else if (selectedGtdFilter) {
       list = list.filter(b => b.objectType !== 'note' && b.gtdStatus === selectedGtdFilter);
     }
 
-    // Filter by content type (only applies to bookmarks)
-    if (selectedTypeFilter) {
+    // Hide closed-out items. An explicit pick of one of those statuses wins,
+    // so selecting e.g. "Done" still shows its items while the toggle is on.
+    if (isHidingClosed()) {
+      list = list.filter(b => !CLOSED_GTD_STATUSES.includes(b.gtdStatus));
+    }
+
+    // Filter by content type (only applies to bookmarks).
+    // UNSET_FILTER matches bookmarks that carry no content type at all.
+    if (selectedTypeFilter === UNSET_FILTER) {
+      list = list.filter(b => b.objectType === 'bookmark' && !b.contentType);
+    } else if (selectedTypeFilter) {
       list = list.filter(b => b.objectType === 'bookmark' && b.contentType === selectedTypeFilter);
     }
 

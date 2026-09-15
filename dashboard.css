@@ -1552,52 +1552,113 @@ body {
 
 .status-filter-item.active {
   font-weight: 500;
+  background: var(--tint);
+  color: var(--ink);
 }
 
-/* GTD status dot colors */
+/* "Hide closed" toggle in the GTD Status section header */
+.sidebar-section-label.gtd-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.hide-closed-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.hide-closed-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.hide-closed-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .status-filter-item .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: var(--dot);
 }
 
-.gtd-item.gtd-next    .status-dot { background: #10b981; }
-.gtd-item.gtd-later   .status-dot { background: #f59e0b; }
-.gtd-item.gtd-someday .status-dot { background: #8b5cf6; }
-.gtd-item.gtd-waiting .status-dot { background: #3b82f6; }
-.gtd-item.gtd-done    .status-dot { background: #9ca3af; }
+/* ── Status & type color palette ───────────────────────
+   One entry per hue: the dot color, plus a tinted background / foreground
+   pair that swaps with the theme. GTD statuses and content types both map
+   onto this palette below, so a status and a type may share a hue — the two
+   never appear in the same list. Changing a mapping is a one-line edit. */
 
-.gtd-item.gtd-next.active    { background: #ecfdf5; color: #065f46; }
-.gtd-item.gtd-later.active   { background: #fffbeb; color: #92400e; }
-.gtd-item.gtd-someday.active { background: #f5f3ff; color: #5b21b6; }
-.gtd-item.gtd-waiting.active { background: #eff6ff; color: #1d4ed8; }
-.gtd-item.gtd-done.active    { background: var(--bg-tertiary); color: var(--text-secondary); }
+:root {
+  --hue-red-dot:     #ef4444;  --hue-red-bg:     #fef2f2;  --hue-red-fg:     #b91c1c;
+  --hue-amber-dot:   #f59e0b;  --hue-amber-bg:   #fffbeb;  --hue-amber-fg:   #92400e;
+  --hue-emerald-dot: #10b981;  --hue-emerald-bg: #ecfdf5;  --hue-emerald-fg: #065f46;
+  --hue-teal-dot:    #14b8a6;  --hue-teal-bg:    #f0fdfa;  --hue-teal-fg:    #0f766e;
+  --hue-cyan-dot:    #06b6d4;  --hue-cyan-bg:    #ecfeff;  --hue-cyan-fg:    #155e75;
+  --hue-blue-dot:    #3b82f6;  --hue-blue-bg:    #eff6ff;  --hue-blue-fg:    #1d4ed8;
+  --hue-violet-dot:  #8b5cf6;  --hue-violet-bg:  #f5f3ff;  --hue-violet-fg:  #5b21b6;
+  --hue-pink-dot:    #ec4899;  --hue-pink-bg:    #fdf2f8;  --hue-pink-fg:    #9d174d;
+  --hue-gray-dot:    #9ca3af;  --hue-gray-bg:    var(--bg-tertiary);
+                               --hue-gray-fg:    var(--text-secondary);
+}
 
-[data-theme="dark"] .gtd-item.gtd-next.active    { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .gtd-item.gtd-later.active   { background: #1c1500; color: #fde68a; }
-[data-theme="dark"] .gtd-item.gtd-someday.active { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .gtd-item.gtd-waiting.active { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .gtd-item.gtd-done.active    { background: var(--bg-tertiary); color: var(--text-secondary); }
+[data-theme="dark"] {
+  /* Gray tracks the neutral tokens; re-declared here so it resolves against
+     the dark values rather than the light ones inherited from :root. */
+  --hue-gray-bg:    var(--bg-tertiary);
+  --hue-gray-fg:    var(--text-secondary);
+  --hue-red-bg:     #2a1515;  --hue-red-fg:     #fca5a5;
+  --hue-amber-bg:   #1c1500;  --hue-amber-fg:   #fde68a;
+  --hue-emerald-bg: #0d2318;  --hue-emerald-fg: #6ee7b7;
+  --hue-teal-bg:    #04211f;  --hue-teal-fg:    #5eead4;
+  --hue-cyan-bg:    #042f3a;  --hue-cyan-fg:    #67e8f9;
+  --hue-blue-bg:    #082030;  --hue-blue-fg:    #7dd3fc;
+  --hue-violet-bg:  #1a0a2e;  --hue-violet-fg:  #d8b4fe;
+  --hue-pink-bg:    #2e0a1c;  --hue-pink-fg:    #f9a8d4;
+}
 
-/* Content type dot colors */
-.type-item.type-read    .status-dot { background: #3b82f6; }
-.type-item.type-watch   .status-dot { background: #ef4444; }
-.type-item.type-listen  .status-dot { background: #8b5cf6; }
-.type-item.type-learn   .status-dot { background: #10b981; }
-.type-item.type-try     .status-dot { background: #f59e0b; }
+/* GTD status → hue */
+.gtd-next      { --dot: var(--hue-red-dot);     --tint: var(--hue-red-bg);     --ink: var(--hue-red-fg); }
+.gtd-later     { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
+.gtd-someday   { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
+.gtd-waiting   { --dot: var(--hue-cyan-dot);    --tint: var(--hue-cyan-bg);    --ink: var(--hue-cyan-fg); }
+.gtd-done      { --dot: var(--hue-emerald-dot); --tint: var(--hue-emerald-bg); --ink: var(--hue-emerald-fg); }
+.gtd-archived  { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
+.gtd-dropped   { --dot: var(--hue-gray-dot);    --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
+.gtd-reference { --dot: var(--hue-teal-dot);    --tint: var(--hue-teal-bg);    --ink: var(--hue-teal-fg); }
+.gtd-unset     {                                --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
 
-.type-item.type-read.active    { background: #eff6ff; color: #1d4ed8; }
-.type-item.type-watch.active   { background: #fef2f2; color: #b91c1c; }
-.type-item.type-listen.active  { background: #f5f3ff; color: #5b21b6; }
-.type-item.type-learn.active   { background: #ecfdf5; color: #065f46; }
-.type-item.type-try.active     { background: #fffbeb; color: #92400e; }
+/* Content type → hue */
+.type-read     { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
+.type-watch    { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
+.type-listen   { --dot: var(--hue-red-dot);     --tint: var(--hue-red-bg);     --ink: var(--hue-red-fg); }
+.type-learn    { --dot: var(--hue-emerald-dot); --tint: var(--hue-emerald-bg); --ink: var(--hue-emerald-fg); }
+.type-try      { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
+.type-create   { --dot: var(--hue-pink-dot);    --tint: var(--hue-pink-bg);    --ink: var(--hue-pink-fg); }
+.type-build    { --dot: var(--hue-cyan-dot);    --tint: var(--hue-cyan-bg);    --ink: var(--hue-cyan-fg); }
+.type-explore  { --dot: var(--hue-teal-dot);    --tint: var(--hue-teal-bg);    --ink: var(--hue-teal-fg); }
+.type-unset    {                                --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
 
-[data-theme="dark"] .type-item.type-read.active    { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .type-item.type-watch.active   { background: #2a1515; color: #fca5a5; }
-[data-theme="dark"] .type-item.type-listen.active  { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .type-item.type-learn.active   { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .type-item.type-try.active     { background: #1c1500; color: #fde68a; }
+/* Unknown carries no hue — a hollow dashed dot instead of a filled one. */
+.gtd-item.gtd-unset   .status-dot,
+.type-item.type-unset .status-dot { background: transparent; border: 1.5px dashed var(--text-muted); }
 
 /* ── Card badges (GTD + Type) ────────────────────────── */
 
@@ -1618,31 +1679,9 @@ body {
   white-space: nowrap;
 }
 
-/* GTD badge colors */
-.gtd-badge.gtd-next    { background: #ecfdf5; color: #065f46; }
-.gtd-badge.gtd-later   { background: #fffbeb; color: #92400e; }
-.gtd-badge.gtd-someday { background: #f5f3ff; color: #5b21b6; }
-.gtd-badge.gtd-waiting { background: #eff6ff; color: #1d4ed8; }
-.gtd-badge.gtd-done    { background: var(--bg-tertiary); color: var(--text-muted); }
-
-[data-theme="dark"] .gtd-badge.gtd-next    { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .gtd-badge.gtd-later   { background: #1c1500; color: #fde68a; }
-[data-theme="dark"] .gtd-badge.gtd-someday { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .gtd-badge.gtd-waiting { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .gtd-badge.gtd-done    { background: var(--bg-tertiary); color: var(--text-muted); }
-
-/* Type badge colors */
-.type-badge.type-read    { background: #eff6ff; color: #1d4ed8; }
-.type-badge.type-watch   { background: #fef2f2; color: #b91c1c; }
-.type-badge.type-listen  { background: #f5f3ff; color: #5b21b6; }
-.type-badge.type-learn   { background: #ecfdf5; color: #065f46; }
-.type-badge.type-try     { background: #fffbeb; color: #92400e; }
-
-[data-theme="dark"] .type-badge.type-read    { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .type-badge.type-watch   { background: #2a1515; color: #fca5a5; }
-[data-theme="dark"] .type-badge.type-listen  { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .type-badge.type-learn   { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .type-badge.type-try     { background: #1c1500; color: #fde68a; }
+/* GTD and type badges read the palette mapping above */
+.gtd-badge,
+.type-badge { background: var(--tint); color: var(--ink); }
 
 /* Score badge colors (rule-based action) */
 .score-badge.score-do-now   { background: #fef2f2; color: #b91c1c; }
@@ -1673,6 +1712,9 @@ body {
   cursor: pointer;
   transition: opacity var(--transition);
   user-select: none;
+  /* Tint comes from the palette mapping in the status/type section above. */
+  background: var(--tint);
+  color: var(--ink);
 }
 
 .gtd-chip:hover,
@@ -1680,29 +1722,24 @@ body {
   opacity: 0.75;
 }
 
-.gtd-chip.gtd-next    { background: #ecfdf5; color: #065f46; }
-.gtd-chip.gtd-later   { background: #fffbeb; color: #92400e; }
-.gtd-chip.gtd-someday { background: #f5f3ff; color: #5b21b6; }
-.gtd-chip.gtd-waiting { background: #eff6ff; color: #1d4ed8; }
-.gtd-chip.gtd-done    { background: var(--bg-tertiary); color: var(--text-secondary); }
+.hide-closed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: opacity var(--transition);
+  user-select: none;
+}
 
-.type-chip.type-read    { background: #eff6ff; color: #1d4ed8; }
-.type-chip.type-watch   { background: #fef2f2; color: #b91c1c; }
-.type-chip.type-listen  { background: #f5f3ff; color: #5b21b6; }
-.type-chip.type-learn   { background: #ecfdf5; color: #065f46; }
-.type-chip.type-try     { background: #fffbeb; color: #92400e; }
-
-[data-theme="dark"] .gtd-chip.gtd-next    { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .gtd-chip.gtd-later   { background: #1c1500; color: #fde68a; }
-[data-theme="dark"] .gtd-chip.gtd-someday { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .gtd-chip.gtd-waiting { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .gtd-chip.gtd-done    { background: var(--bg-tertiary); color: var(--text-secondary); }
-
-[data-theme="dark"] .type-chip.type-read    { background: #082030; color: #7dd3fc; }
-[data-theme="dark"] .type-chip.type-watch   { background: #2a1515; color: #fca5a5; }
-[data-theme="dark"] .type-chip.type-listen  { background: #1a0a2e; color: #d8b4fe; }
-[data-theme="dark"] .type-chip.type-learn   { background: #0d2318; color: #6ee7b7; }
-[data-theme="dark"] .type-chip.type-try     { background: #1c1500; color: #fde68a; }
+.hide-closed-chip:hover {
+  opacity: 0.75;
+}
 
 /* ── Type switcher nav ──────────────────────────────────── */
 

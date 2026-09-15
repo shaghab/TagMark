@@ -238,7 +238,7 @@ describe('sanitizeBookmark', () => {
   });
 
   test('all valid contentType values are accepted', () => {
-    const types = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+    const types = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build', 'explore'];
     for (const contentType of types) {
       const b = sanitizeBookmark({ ...VALID_RAW, contentType });
       expect(b.contentType).toBe(contentType);

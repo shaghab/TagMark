@@ -77,13 +77,27 @@ function setupPillGroup(groupEl, setVal) {
 // ── GTD & Content Type ────────────────────────────────────────────────────────
 
 const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
-const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build', 'explore'];
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
+
+// Statuses that mark an item as no longer actionable. The dashboard's
+// "Hide closed" toggle filters these out of the grid.
+const CLOSED_GTD_STATUSES = ['done', 'dropped', 'archived', 'reference'];
+
+// Sentinel used by the sidebar filters to select items that carry no GTD status
+// or no content type. Never stored on an item — it only ever lives in filter state.
+const UNSET_FILTER = '__unset__';
 
 // Allowlist maps for CSS class construction (A03 – CSS Injection defence).
 // Only values from the known-safe arrays may appear as CSS class suffixes.
-const GTD_CSS_CLASS  = Object.fromEntries(GTD_STATUSES.map(s  => [s,  'gtd-'  + s]));
-const TYPE_CSS_CLASS = Object.fromEntries(CONTENT_TYPES.map(t => [t, 'type-' + t]));
+const GTD_CSS_CLASS  = Object.fromEntries([...GTD_STATUSES.map(s  => [s,  'gtd-'  + s]),  [UNSET_FILTER, 'gtd-unset']]);
+const TYPE_CSS_CLASS = Object.fromEntries([...CONTENT_TYPES.map(t => [t, 'type-' + t]), [UNSET_FILTER, 'type-unset']]);
+
+// Human-readable label for a GTD status / content type / unset sentinel.
+function statusLabel(value) {
+  if (value === UNSET_FILTER) return 'Unknown';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
