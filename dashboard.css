@@ -1610,7 +1610,8 @@ body {
   --hue-red-dot:     #ef4444;  --hue-red-bg:     #fef2f2;  --hue-red-fg:     #b91c1c;
   --hue-amber-dot:   #f59e0b;  --hue-amber-bg:   #fffbeb;  --hue-amber-fg:   #92400e;
   --hue-emerald-dot: #10b981;  --hue-emerald-bg: #ecfdf5;  --hue-emerald-fg: #065f46;
-  --hue-teal-dot:    #14b8a6;  --hue-teal-bg:    #f0fdfa;  --hue-teal-fg:    #0f766e;
+  --hue-lime-dot:    #84cc16;  --hue-lime-bg:    #f7fee7;  --hue-lime-fg:    #3f6212;
+  --hue-slate-dot:   #64748b;  --hue-slate-bg:   #f1f5f9;  --hue-slate-fg:   #334155;
   --hue-cyan-dot:    #06b6d4;  --hue-cyan-bg:    #ecfeff;  --hue-cyan-fg:    #155e75;
   --hue-blue-dot:    #3b82f6;  --hue-blue-bg:    #eff6ff;  --hue-blue-fg:    #1d4ed8;
   --hue-violet-dot:  #8b5cf6;  --hue-violet-bg:  #f5f3ff;  --hue-violet-fg:  #5b21b6;
@@ -1627,7 +1628,8 @@ body {
   --hue-red-bg:     #2a1515;  --hue-red-fg:     #fca5a5;
   --hue-amber-bg:   #1c1500;  --hue-amber-fg:   #fde68a;
   --hue-emerald-bg: #0d2318;  --hue-emerald-fg: #6ee7b7;
-  --hue-teal-bg:    #04211f;  --hue-teal-fg:    #5eead4;
+  --hue-lime-bg:    #16210a;  --hue-lime-fg:    #bef264;
+  --hue-slate-bg:   #1c2129;  --hue-slate-fg:   #cbd5e1;
   --hue-cyan-bg:    #042f3a;  --hue-cyan-fg:    #67e8f9;
   --hue-blue-bg:    #082030;  --hue-blue-fg:    #7dd3fc;
   --hue-violet-bg:  #1a0a2e;  --hue-violet-fg:  #d8b4fe;
@@ -1636,25 +1638,25 @@ body {
 
 /* GTD status → hue */
 .gtd-next      { --dot: var(--hue-red-dot);     --tint: var(--hue-red-bg);     --ink: var(--hue-red-fg); }
-.gtd-later     { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
-.gtd-someday   { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
-.gtd-waiting   { --dot: var(--hue-cyan-dot);    --tint: var(--hue-cyan-bg);    --ink: var(--hue-cyan-fg); }
+.gtd-later     { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
+.gtd-someday   { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
+.gtd-waiting   { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
 .gtd-done      { --dot: var(--hue-emerald-dot); --tint: var(--hue-emerald-bg); --ink: var(--hue-emerald-fg); }
-.gtd-archived  { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
+.gtd-archived  { --dot: var(--hue-slate-dot);   --tint: var(--hue-slate-bg);   --ink: var(--hue-slate-fg); }
 .gtd-dropped   { --dot: var(--hue-gray-dot);    --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
-.gtd-reference { --dot: var(--hue-teal-dot);    --tint: var(--hue-teal-bg);    --ink: var(--hue-teal-fg); }
+.gtd-reference { --dot: var(--hue-pink-dot);    --tint: var(--hue-pink-bg);    --ink: var(--hue-pink-fg); }
 .gtd-unset     {                                --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
 
 /* Content type → hue */
-.type-read     { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
-.type-watch    { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
-.type-listen   { --dot: var(--hue-red-dot);     --tint: var(--hue-red-bg);     --ink: var(--hue-red-fg); }
-.type-learn    { --dot: var(--hue-emerald-dot); --tint: var(--hue-emerald-bg); --ink: var(--hue-emerald-fg); }
-.type-try      { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
-.type-create   { --dot: var(--hue-pink-dot);    --tint: var(--hue-pink-bg);    --ink: var(--hue-pink-fg); }
-.type-build    { --dot: var(--hue-cyan-dot);    --tint: var(--hue-cyan-bg);    --ink: var(--hue-cyan-fg); }
-.type-explore  { --dot: var(--hue-teal-dot);    --tint: var(--hue-teal-bg);    --ink: var(--hue-teal-fg); }
-.type-unset    {                                --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
+.type-read    { --dot: var(--hue-blue-dot);    --tint: var(--hue-blue-bg);    --ink: var(--hue-blue-fg); }
+.type-watch   { --dot: var(--hue-violet-dot);  --tint: var(--hue-violet-bg);  --ink: var(--hue-violet-fg); }
+.type-listen  { --dot: var(--hue-red-dot);     --tint: var(--hue-red-bg);     --ink: var(--hue-red-fg); }
+.type-learn   { --dot: var(--hue-emerald-dot); --tint: var(--hue-emerald-bg); --ink: var(--hue-emerald-fg); }
+.type-explore { --dot: var(--hue-lime-dot);    --tint: var(--hue-lime-bg);    --ink: var(--hue-lime-fg); }
+.type-try     { --dot: var(--hue-amber-dot);   --tint: var(--hue-amber-bg);   --ink: var(--hue-amber-fg); }
+.type-create  { --dot: var(--hue-pink-dot);    --tint: var(--hue-pink-bg);    --ink: var(--hue-pink-fg); }
+.type-build   { --dot: var(--hue-cyan-dot);    --tint: var(--hue-cyan-bg);    --ink: var(--hue-cyan-fg); }
+.type-unset   {                                --tint: var(--hue-gray-bg);    --ink: var(--hue-gray-fg); }
 
 /* Unknown carries no hue — a hollow dashed dot instead of a filled one. */
 .gtd-item.gtd-unset   .status-dot,
