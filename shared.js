@@ -77,7 +77,7 @@ function setupPillGroup(groupEl, setVal) {
 // ── GTD & Content Type ────────────────────────────────────────────────────────
 
 const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archived', 'dropped', 'reference'];
-const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
+const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build', 'explore'];
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
 // Statuses that mark an item as no longer actionable. The dashboard's

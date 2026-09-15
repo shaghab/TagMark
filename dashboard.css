@@ -1625,12 +1625,14 @@ body {
 .type-item.type-listen  .status-dot { background: #8b5cf6; }
 .type-item.type-learn   .status-dot { background: #10b981; }
 .type-item.type-try     .status-dot { background: #f59e0b; }
+.type-item.type-explore .status-dot { background: #14b8a6; }
 
 .type-item.type-read.active    { background: #eff6ff; color: #1d4ed8; }
 .type-item.type-watch.active   { background: #fef2f2; color: #b91c1c; }
 .type-item.type-listen.active  { background: #f5f3ff; color: #5b21b6; }
 .type-item.type-learn.active   { background: #ecfdf5; color: #065f46; }
 .type-item.type-try.active     { background: #fffbeb; color: #92400e; }
+.type-item.type-explore.active { background: #f0fdfa; color: #0f766e; }
 
 .type-item.type-unset   .status-dot { background: transparent; border: 1.5px dashed var(--text-muted); }
 .type-item.type-unset.active   { background: var(--bg-tertiary); color: var(--text-secondary); }
@@ -1640,6 +1642,7 @@ body {
 [data-theme="dark"] .type-item.type-listen.active  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-item.type-learn.active   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-item.type-try.active     { background: #1c1500; color: #fde68a; }
+[data-theme="dark"] .type-item.type-explore.active { background: #04211f; color: #5eead4; }
 
 /* ── Card badges (GTD + Type) ────────────────────────── */
 
@@ -1679,12 +1682,14 @@ body {
 .type-badge.type-listen  { background: #f5f3ff; color: #5b21b6; }
 .type-badge.type-learn   { background: #ecfdf5; color: #065f46; }
 .type-badge.type-try     { background: #fffbeb; color: #92400e; }
+.type-badge.type-explore { background: #f0fdfa; color: #0f766e; }
 
 [data-theme="dark"] .type-badge.type-read    { background: #082030; color: #7dd3fc; }
 [data-theme="dark"] .type-badge.type-watch   { background: #2a1515; color: #fca5a5; }
 [data-theme="dark"] .type-badge.type-listen  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-badge.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-badge.type-try     { background: #1c1500; color: #fde68a; }
+[data-theme="dark"] .type-badge.type-explore { background: #04211f; color: #5eead4; }
 
 /* Score badge colors (rule-based action) */
 .score-badge.score-do-now   { background: #fef2f2; color: #b91c1c; }
@@ -1755,6 +1760,7 @@ body {
 .type-chip.type-listen  { background: #f5f3ff; color: #5b21b6; }
 .type-chip.type-learn   { background: #ecfdf5; color: #065f46; }
 .type-chip.type-try     { background: #fffbeb; color: #92400e; }
+.type-chip.type-explore { background: #f0fdfa; color: #0f766e; }
 
 [data-theme="dark"] .gtd-chip.gtd-next    { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .gtd-chip.gtd-later   { background: #1c1500; color: #fde68a; }
@@ -1767,6 +1773,7 @@ body {
 [data-theme="dark"] .type-chip.type-listen  { background: #1a0a2e; color: #d8b4fe; }
 [data-theme="dark"] .type-chip.type-learn   { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .type-chip.type-try     { background: #1c1500; color: #fde68a; }
+[data-theme="dark"] .type-chip.type-explore { background: #04211f; color: #5eead4; }
 
 /* ── Type switcher nav ──────────────────────────────────── */
 
