@@ -345,13 +345,14 @@
     gtdItems.forEach(b => {
       if (b.gtdStatus) counts[b.gtdStatus] = (counts[b.gtdStatus] || 0) + 1;
     });
+    counts[UNSET_FILTER] = gtdItems.filter(b => !b.gtdStatus).length;
     gtdFilterList.innerHTML = '';
-    GTD_STATUSES.forEach(status => {
+    [...GTD_STATUSES, UNSET_FILTER].forEach(status => {
       const count = counts[status] || 0;
       const item = document.createElement('button');
       item.className = 'status-filter-item gtd-item ' + (GTD_CSS_CLASS[status] || '') + (selectedGtdFilter === status ? ' active' : '');
       item.dataset.value = status;
-      item.innerHTML = `<span class="status-dot"></span>${escHtml(status.charAt(0).toUpperCase() + status.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(statusLabel(status))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
         selectedGtdFilter = selectedGtdFilter === status ? null : status;
         renderGtdFilter();
@@ -367,13 +368,14 @@
     typeItems.forEach(b => {
       if (b.contentType) counts[b.contentType] = (counts[b.contentType] || 0) + 1;
     });
+    counts[UNSET_FILTER] = typeItems.filter(b => !b.contentType).length;
     typeFilterList.innerHTML = '';
-    CONTENT_TYPES.forEach(type => {
+    [...CONTENT_TYPES, UNSET_FILTER].forEach(type => {
       const count = counts[type] || 0;
       const item = document.createElement('button');
       item.className = 'status-filter-item type-item ' + (TYPE_CSS_CLASS[type] || '') + (selectedTypeFilter === type ? ' active' : '');
       item.dataset.value = type;
-      item.innerHTML = `<span class="status-dot"></span>${escHtml(type.charAt(0).toUpperCase() + type.slice(1))}<span class="tag-filter-count">${count}</span>`;
+      item.innerHTML = `<span class="status-dot"></span>${escHtml(statusLabel(type))}<span class="tag-filter-count">${count}</span>`;
       item.addEventListener('click', () => {
         selectedTypeFilter = selectedTypeFilter === type ? null : type;
         renderTypeFilter();
@@ -807,11 +809,11 @@
       : '';
 
     const gtdChipHtml = hasGtdFilter
-      ? `<span class="gtd-chip active-filter-chip ${GTD_CSS_CLASS[selectedGtdFilter] || ''}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(selectedGtdFilter.charAt(0).toUpperCase() + selectedGtdFilter.slice(1))} ×</span>`
+      ? `<span class="gtd-chip active-filter-chip ${GTD_CSS_CLASS[selectedGtdFilter] || ''}" data-gtd="${escAttr(selectedGtdFilter)}">${escHtml(statusLabel(selectedGtdFilter))} ×</span>`
       : '';
 
     const typeChipHtml = hasTypeFilter
-      ? `<span class="type-chip active-filter-chip ${TYPE_CSS_CLASS[selectedTypeFilter] || ''}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(selectedTypeFilter.charAt(0).toUpperCase() + selectedTypeFilter.slice(1))} ×</span>`
+      ? `<span class="type-chip active-filter-chip ${TYPE_CSS_CLASS[selectedTypeFilter] || ''}" data-type="${escAttr(selectedTypeFilter)}">${escHtml(statusLabel(selectedTypeFilter))} ×</span>`
       : '';
 
     activeTagChips.innerHTML = tagChipsHtml + gtdChipHtml + typeChipHtml + dateChipHtml + folderChipHtml;
@@ -909,13 +911,19 @@
       list = list.filter(b => folderIds.has(b.folderId));
     }
 
-    // Filter by GTD status (only applies to bookmarks and tasks)
-    if (selectedGtdFilter) {
+    // Filter by GTD status (only applies to bookmarks and tasks).
+    // UNSET_FILTER matches items that carry no GTD status at all.
+    if (selectedGtdFilter === UNSET_FILTER) {
+      list = list.filter(b => b.objectType !== 'note' && !b.gtdStatus);
+    } else if (selectedGtdFilter) {
       list = list.filter(b => b.objectType !== 'note' && b.gtdStatus === selectedGtdFilter);
     }
 
-    // Filter by content type (only applies to bookmarks)
-    if (selectedTypeFilter) {
+    // Filter by content type (only applies to bookmarks).
+    // UNSET_FILTER matches bookmarks that carry no content type at all.
+    if (selectedTypeFilter === UNSET_FILTER) {
+      list = list.filter(b => b.objectType === 'bookmark' && !b.contentType);
+    } else if (selectedTypeFilter) {
       list = list.filter(b => b.objectType === 'bookmark' && b.contentType === selectedTypeFilter);
     }
 

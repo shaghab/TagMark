@@ -1574,6 +1574,9 @@ body {
 .gtd-item.gtd-waiting.active { background: #eff6ff; color: #1d4ed8; }
 .gtd-item.gtd-done.active    { background: var(--bg-tertiary); color: var(--text-secondary); }
 
+.gtd-item.gtd-unset   .status-dot { background: transparent; border: 1.5px dashed var(--text-muted); }
+.gtd-item.gtd-unset.active   { background: var(--bg-tertiary); color: var(--text-secondary); }
+
 [data-theme="dark"] .gtd-item.gtd-next.active    { background: #0d2318; color: #6ee7b7; }
 [data-theme="dark"] .gtd-item.gtd-later.active   { background: #1c1500; color: #fde68a; }
 [data-theme="dark"] .gtd-item.gtd-someday.active { background: #1a0a2e; color: #d8b4fe; }
@@ -1592,6 +1595,9 @@ body {
 .type-item.type-listen.active  { background: #f5f3ff; color: #5b21b6; }
 .type-item.type-learn.active   { background: #ecfdf5; color: #065f46; }
 .type-item.type-try.active     { background: #fffbeb; color: #92400e; }
+
+.type-item.type-unset   .status-dot { background: transparent; border: 1.5px dashed var(--text-muted); }
+.type-item.type-unset.active   { background: var(--bg-tertiary); color: var(--text-secondary); }
 
 [data-theme="dark"] .type-item.type-read.active    { background: #082030; color: #7dd3fc; }
 [data-theme="dark"] .type-item.type-watch.active   { background: #2a1515; color: #fca5a5; }
@@ -1685,6 +1691,9 @@ body {
 .gtd-chip.gtd-someday { background: #f5f3ff; color: #5b21b6; }
 .gtd-chip.gtd-waiting { background: #eff6ff; color: #1d4ed8; }
 .gtd-chip.gtd-done    { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.gtd-chip.gtd-unset,
+.type-chip.type-unset   { background: var(--bg-tertiary); color: var(--text-secondary); }
 
 .type-chip.type-read    { background: #eff6ff; color: #1d4ed8; }
 .type-chip.type-watch   { background: #fef2f2; color: #b91c1c; }

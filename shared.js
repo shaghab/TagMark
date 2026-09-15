@@ -80,10 +80,20 @@ const GTD_STATUSES    = ['next', 'later', 'someday', 'waiting', 'done', 'archive
 const CONTENT_TYPES   = ['read', 'watch', 'listen', 'learn', 'try', 'create', 'build'];
 const PRIORITY_LEVELS = ['critical', 'high', 'medium', 'low', 'none'];
 
+// Sentinel used by the sidebar filters to select items that carry no GTD status
+// or no content type. Never stored on an item — it only ever lives in filter state.
+const UNSET_FILTER = '__unset__';
+
 // Allowlist maps for CSS class construction (A03 – CSS Injection defence).
 // Only values from the known-safe arrays may appear as CSS class suffixes.
-const GTD_CSS_CLASS  = Object.fromEntries(GTD_STATUSES.map(s  => [s,  'gtd-'  + s]));
-const TYPE_CSS_CLASS = Object.fromEntries(CONTENT_TYPES.map(t => [t, 'type-' + t]));
+const GTD_CSS_CLASS  = Object.fromEntries([...GTD_STATUSES.map(s  => [s,  'gtd-'  + s]),  [UNSET_FILTER, 'gtd-unset']]);
+const TYPE_CSS_CLASS = Object.fromEntries([...CONTENT_TYPES.map(t => [t, 'type-' + t]), [UNSET_FILTER, 'type-unset']]);
+
+// Human-readable label for a GTD status / content type / unset sentinel.
+function statusLabel(value) {
+  if (value === UNSET_FILTER) return 'Unknown';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 // ── UI timing & limits ────────────────────────────────────────────────────────
 
