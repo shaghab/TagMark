@@ -1017,6 +1017,11 @@ async function importBookmarkList(rawList, resolveFolder) {
 
     const key  = BM_PREFIX + b.id;
     const size = syncItemSize(key, compactBookmark(b));
+    // A single oversized entry would make chrome.storage.sync reject the whole
+    // write, losing every valid bookmark in the batch. The field caps allow it:
+    // title + url + notes + 50 tags can pack to ~17 KB against an 8 KB limit.
+    if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
+
     // Stop on either ceiling: the id index's own 8 KB cap, or total sync
     // bytes. The index is rewritten wholesale, so its growth counts against
     // the total alongside the new entry — leaving it out under-reports the

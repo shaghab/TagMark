@@ -964,6 +964,54 @@ describe('storage sharding', () => {
   });
 });
 
+// ── Storage mock fidelity ─────────────────────────────────────────────────────
+
+describe('createStorageMock: quota enforcement', () => {
+  // The mock mirrors Chrome's rejection behaviour so a missing quota check
+  // fails a test rather than passing silently and breaking in a real profile.
+  let storage, runtime;
+  beforeEach(() => {
+    runtime = {};
+    storage = createStorageMock(runtime);
+  });
+
+  test('rejects a single item over QUOTA_BYTES_PER_ITEM', done => {
+    storage.set({ big: 'x'.repeat(9000) }, () => {
+      expect(runtime.lastError).toBeDefined();
+      expect(runtime.lastError.message).toMatch(/QUOTA_BYTES_PER_ITEM/);
+      expect(storage._data.big).toBeUndefined();
+      done();
+    });
+  });
+
+  test('rejects a write that would exceed QUOTA_BYTES in total', done => {
+    for (let i = 0; i < 14; i++) storage.set({ [`k${i}`]: 'x'.repeat(8000) }, () => {});
+    storage.set({ overflow: 'x'.repeat(8000) }, () => {
+      expect(runtime.lastError).toBeDefined();
+      expect(runtime.lastError.message).toMatch(/QUOTA_BYTES/);
+      done();
+    });
+  });
+
+  test('clears lastError after the callback so the next write is clean', done => {
+    storage.set({ big: 'x'.repeat(9000) }, () => {});
+    expect(runtime.lastError).toBeUndefined();
+    storage.set({ small: 'ok' }, () => {
+      expect(runtime.lastError).toBeUndefined();
+      expect(storage._data.small).toBe('ok');
+      done();
+    });
+  });
+
+  test('accepts a write inside both quotas', done => {
+    storage.set({ fine: 'x'.repeat(100) }, () => {
+      expect(runtime.lastError).toBeUndefined();
+      expect(storage._data.fine).toHaveLength(100);
+      done();
+    });
+  });
+});
+
 // ── Legacy storage migration ──────────────────────────────────────────────────
 
 describe('migrateLegacyStorage', () => {

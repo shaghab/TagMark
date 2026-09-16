@@ -738,6 +738,50 @@ describe('import-data: collection index quota', () => {
     expect(totalBytes).toBeLessThanOrEqual(102400);
   });
 
+  test('an oversized bookmark is skipped without losing the rest of the batch', async () => {
+    // Every field is within its own cap, but packed together the entry is
+    // ~17 KB against an 8 KB per-item limit. Submitting it would make
+    // chrome.storage.sync reject the whole write.
+    const oversized = {
+      url: 'https://example.com/fat',
+      title: 'T'.repeat(2000),
+      notes: 'N'.repeat(10000),
+      tags: Array.from({ length: 50 }, (_, i) => `tag${i}`.repeat(20)),
+    };
+
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [
+        { url: 'https://good-one.com', title: 'Good' },
+        oversized,
+        { url: 'https://good-two.com', title: 'Also good' },
+      ] },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.counts.bookmarks).toBe(2);
+    expect(result.counts.skipped.bookmarks).toBe(1);
+
+    const urls = (await sendMessage({ action: 'get-bookmarks' })).map(b => b.url);
+    expect(urls).toEqual(expect.arrayContaining(['https://good-one.com', 'https://good-two.com']));
+    expect(urls).not.toContain('https://example.com/fat');
+  });
+
+  test('every stored value stays inside the per-item quota', async () => {
+    await sendMessage({
+      action: 'import-data',
+      data: {
+        bookmarks: [{ url: 'https://a.com', title: 'A'.repeat(2000), notes: 'N'.repeat(10000) }],
+        notes:     [{ title: 'N'.repeat(2000), content: 'C'.repeat(5000) }],
+        tasks:     [{ title: 'T'.repeat(2000), notes: 'D'.repeat(10000) }],
+      },
+    });
+
+    Object.entries(storage._data).forEach(([k, v]) => {
+      expect(k.length + JSON.stringify(v).length).toBeLessThanOrEqual(8192);
+    });
+  });
+
   test('a normal-sized batch reports nothing skipped', async () => {
     const result = await sendMessage({
       action: 'import-data',
