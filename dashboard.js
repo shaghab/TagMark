@@ -1953,6 +1953,27 @@
       lines.push('');
     }
 
+    // Grouping headings alone would lose empty folders and the nesting, and
+    // a folders-only export would be nothing but a header — so write the tree.
+    if (data.folders.length) {
+      lines.push(`## Folders (${data.folders.length})`, '');
+      const ids      = new Set(data.folders.map(f => f.id));
+      const children = new Map();
+      data.folders.forEach(f => {
+        const key = ids.has(f.parentId) ? f.parentId : '';
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(f);
+      });
+      const walk = (parentKey, depth) => {
+        (children.get(parentKey) || []).forEach(folder => {
+          lines.push(`${'  '.repeat(depth)}- ${folder.name}`);
+          walk(folder.id, depth + 1);
+        });
+      };
+      walk('', 0);
+      lines.push('');
+    }
+
     return lines.join('\n');
   }
 
@@ -1983,15 +2004,24 @@
   // ── Export modal ───────────────────────────────────────────────────────────
 
   function refreshExportPreview() {
+    // The Trash view renders deleted objects, which are not part of any
+    // collection the export reads — "what I'm looking at now" would quietly
+    // export the active data instead, so it is unavailable there.
+    const viewRadio = document.querySelector('input[name="expScope"][value="view"]');
+    viewRadio.disabled = viewingTrash;
+    if (viewingTrash && viewRadio.checked) {
+      document.querySelector('input[name="expScope"][value="all"]').checked = true;
+    }
+
     const counts  = previewCounts();
     const format  = exportFormat();
     const include = EXPORT_TYPES.filter(t => expInc[t].checked);
 
     EXPORT_TYPES.forEach(t => { expCountEl[t].textContent = counts[t]; });
 
-    $('expScopeHint').textContent = activeObjectType === 'all'
-      ? ''
-      : `currently showing ${activeObjectType}s`;
+    $('expScopeHint').textContent = viewingTrash
+      ? 'not available while viewing Trash'
+      : (activeObjectType === 'all' ? '' : `currently showing ${activeObjectType}s`);
 
     const spec      = EXPORT_FORMATS[format];
     const effective = include.filter(t => spec.carries.includes(t));
@@ -2159,10 +2189,15 @@
     const base = parts.length
       ? `Imported ${parts.join(', ')}.`
       : 'Nothing new — everything in that file was already here.';
-    // Folders share one sync key with an 8 KB cap, so a very large tree is
-    // truncated rather than failing the import; those items land unfiled.
-    return counts.skippedFolders
-      ? `${base} ${plural(counts.skippedFolders, 'folder')} skipped — no room left in sync storage.`
+
+    // Each collection's id index is one sync item with an 8 KB cap, so a very
+    // large file is truncated rather than failing outright. Say what was left.
+    const skipped = counts.skipped || {};
+    const dropped = EXPORT_TYPES
+      .filter(t => skipped[t] > 0)
+      .map(t => plural(skipped[t], t.slice(0, -1)));
+    return dropped.length
+      ? `${base} ${dropped.join(', ')} skipped — no room left in sync storage.`
       : base;
   }
 

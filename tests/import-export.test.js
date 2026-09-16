@@ -275,7 +275,10 @@ describe('handleMessage: import-data', () => {
   });
 
   test('handles a missing or malformed payload without throwing', async () => {
-    const empty = { bookmarks: 0, notes: 0, tasks: 0, folders: 0, skippedFolders: 0 };
+    const empty = {
+      bookmarks: 0, notes: 0, tasks: 0, folders: 0,
+      skipped: { bookmarks: 0, notes: 0, tasks: 0, folders: 0 },
+    };
     expect((await sendMessage({ action: 'import-data' })).counts).toEqual(empty);
     expect((await sendMessage({ action: 'import-data', data: null })).counts).toEqual(empty);
     expect((await sendMessage({ action: 'import-data', data: [] })).counts).toEqual(empty);
@@ -299,6 +302,98 @@ describe('handleMessage: import-data', () => {
   });
 });
 
+// ── Sparse imports must not erase curated metadata ───────────────────────────
+
+describe('import-data: merging onto an existing bookmark', () => {
+  const CURATED = {
+    url: 'https://example.com/a',
+    title: 'My Curated Title',
+    tags: ['javascript', 'web-dev'],
+    notes: 'Important notes I wrote',
+    pinned: true,
+    gtdStatus: 'next',
+    contentType: 'read',
+    urgency: 'high',
+    importance: 'critical',
+  };
+
+  const saveCurated = () => sendMessage({ action: 'save-bookmark', bookmark: CURATED });
+
+  test('a bare HTML-style record keeps the local metadata', async () => {
+    await saveCurated();
+    // What parseNetscapeHtml produces from a plain Chrome export.
+    await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [{ url: CURATED.url, title: 'example.com', tags: [], notes: '' }] },
+    });
+
+    const [b] = await sendMessage({ action: 'get-bookmarks' });
+    expect(b.tags).toEqual(['javascript', 'web-dev']);
+    expect(b.notes).toBe('Important notes I wrote');
+    expect(b.pinned).toBe(true);
+    expect(b.gtdStatus).toBe('next');
+    expect(b.contentType).toBe('read');
+    expect(b.urgency).toBe('high');
+    expect(b.importance).toBe('critical');
+  });
+
+  test('a value the file does carry still wins', async () => {
+    await saveCurated();
+    await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [{
+        url: CURATED.url,
+        title: 'A Better Title',
+        tags: ['rust'],
+        notes: 'replacement note',
+        gtdStatus: 'waiting',
+      }] },
+    });
+
+    const [b] = await sendMessage({ action: 'get-bookmarks' });
+    expect(b.title).toBe('A Better Title');
+    expect(b.tags).toEqual(['rust']);
+    expect(b.notes).toBe('replacement note');
+    expect(b.gtdStatus).toBe('waiting');
+    // Untouched fields survive.
+    expect(b.pinned).toBe(true);
+    expect(b.importance).toBe('critical');
+  });
+
+  test('an explicit pinned:false in a TagMark export is honoured', async () => {
+    await saveCurated();
+    await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [{ url: CURATED.url, title: 'x', pinned: false }] },
+    });
+    expect((await sendMessage({ action: 'get-bookmarks' }))[0].pinned).toBe(false);
+  });
+
+  test('the id and createdAt of the existing bookmark are preserved', async () => {
+    const saved = await saveCurated();
+    await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [{ url: CURATED.url, title: 'other' }] },
+    });
+
+    const [b] = await sendMessage({ action: 'get-bookmarks' });
+    expect(b.id).toBe(saved.id);
+    expect(b.createdAt).toBe(saved.createdAt);
+  });
+
+  test('a full export round-trips over itself without losing anything', async () => {
+    await saveCurated();
+    const exported = await sendMessage({ action: 'export-data' });
+    await sendMessage({ action: 'import-data', data: exported });
+
+    const [b] = await sendMessage({ action: 'get-bookmarks' });
+    expect(b.tags).toEqual(['javascript', 'web-dev']);
+    expect(b.pinned).toBe(true);
+    expect(b.gtdStatus).toBe('next');
+    expect(b.urgency).toBe('high');
+  });
+});
+
 // ── Sync quota ───────────────────────────────────────────────────────────────
 
 describe('import-data: folder sync quota', () => {
@@ -319,7 +414,7 @@ describe('import-data: folder sync quota', () => {
       },
     });
 
-    expect(result.counts.skippedFolders).toBeGreaterThan(0);
+    expect(result.counts.skipped.folders).toBeGreaterThan(0);
     expect(result.counts.folders).toBeGreaterThan(0);
     // The bookmark still imports rather than being lost with the folders.
     expect(result.counts.bookmarks).toBe(1);
@@ -353,8 +448,65 @@ describe('import-data: folder sync quota', () => {
 
   test('a normal-sized tree reports nothing skipped', async () => {
     const result = await sendMessage({ action: 'import-data', data: { folders: manyFolders(3) } });
-    expect(result.counts.skippedFolders).toBe(0);
+    expect(result.counts.skipped.folders).toBe(0);
     expect(result.counts.folders).toBe(3);
+  });
+});
+
+describe('import-data: collection index quota', () => {
+  // Each collection's id index is a single sync item capped at 8 KB (~545
+  // ids), so a large batch must truncate rather than have storageSet reject
+  // the whole write.
+  const manyNotes = n => Array.from({ length: n }, (_, i) => ({ title: `Note ${i}`, content: `body ${i}` }));
+  const manyTasks = n => Array.from({ length: n }, (_, i) => ({ title: `Task ${i}`, notes: `detail ${i}` }));
+  const manyBookmarks = n => Array.from({ length: n }, (_, i) => ({ url: `https://example.com/${i}`, title: `B${i}` }));
+
+  const indexBytes = (storage, key) =>
+    key.length + JSON.stringify(storage._data[key] || []).length;
+
+  test('a huge note batch truncates and reports the remainder', async () => {
+    const result = await sendMessage({ action: 'import-data', data: { notes: manyNotes(900) } });
+
+    expect(result.counts.skipped.notes).toBeGreaterThan(0);
+    expect(result.counts.notes).toBeGreaterThan(0);
+    expect(indexBytes(storage, 'tagmark_index_note')).toBeLessThanOrEqual(8192);
+    // Every id in the index resolves to a stored note.
+    const notes = await sendMessage({ action: 'get-notes' });
+    expect(notes).toHaveLength(result.counts.notes);
+  });
+
+  test('a huge task batch truncates and reports the remainder', async () => {
+    const result = await sendMessage({ action: 'import-data', data: { tasks: manyTasks(900) } });
+
+    expect(result.counts.skipped.tasks).toBeGreaterThan(0);
+    expect(indexBytes(storage, 'tagmark_index_task')).toBeLessThanOrEqual(8192);
+    expect(await sendMessage({ action: 'get-tasks' })).toHaveLength(result.counts.tasks);
+  });
+
+  test('a huge bookmark batch truncates and reports the remainder', async () => {
+    const result = await sendMessage({ action: 'import-data', data: { bookmarks: manyBookmarks(900) } });
+
+    expect(result.counts.skipped.bookmarks).toBeGreaterThan(0);
+    expect(indexBytes(storage, 'tagmark_index')).toBeLessThanOrEqual(8192);
+    expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(result.counts.bookmarks);
+  });
+
+  test('a normal-sized batch reports nothing skipped', async () => {
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { notes: manyNotes(5), tasks: manyTasks(5), bookmarks: manyBookmarks(5) },
+    });
+    expect(result.counts.skipped).toEqual({ bookmarks: 0, notes: 0, tasks: 0, folders: 0 });
+    expect(result.counts.notes).toBe(5);
+    expect(result.counts.tasks).toBe(5);
+    expect(result.counts.bookmarks).toBe(5);
+  });
+
+  test('updating existing bookmarks does not consume index room', async () => {
+    await sendMessage({ action: 'import-data', data: { bookmarks: manyBookmarks(20) } });
+    const result = await sendMessage({ action: 'import-data', data: { bookmarks: manyBookmarks(20) } });
+    expect(result.counts.skipped.bookmarks).toBe(0);
+    expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(20);
   });
 });
 

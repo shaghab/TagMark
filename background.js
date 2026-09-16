@@ -889,11 +889,41 @@ function makeFolderResolver(idMap, existingFolderIds) {
   };
 }
 
+// Folds an imported bookmark into one already saved under the same URL.
+//
+// An imported record is often sparse — a Netscape HTML file carries little
+// more than a URL and a title — while sanitizeBookmark fills every field with
+// a default. Spreading it wholesale would blank the tags, notes, pin state and
+// GTD/priority metadata off a bookmark the user had curated. So a field is
+// taken from the import only when the file actually carried a value for it;
+// an import adds to what is already there and never strips it.
+function mergeImportedBookmark(existing, incoming, raw) {
+  const merged = { ...existing };
+  const provided = key => Object.prototype.hasOwnProperty.call(raw, key);
+
+  if (typeof raw.title === 'string' && raw.title.trim())     merged.title      = incoming.title;
+  if (typeof raw.favIconUrl === 'string' && raw.favIconUrl)  merged.favIconUrl = incoming.favIconUrl;
+  if (Array.isArray(raw.tags) && raw.tags.length)            merged.tags       = incoming.tags;
+  if (typeof raw.notes === 'string' && raw.notes)            merged.notes      = incoming.notes;
+  // pinned is a real boolean, so an explicit false in a TagMark export counts.
+  if (provided('pinned'))                                     merged.pinned     = incoming.pinned;
+  // The rest are null when absent, so a non-null value means the file had one.
+  if (incoming.folderId)                                      merged.folderId   = incoming.folderId;
+  if (incoming.gtdStatus)                                     merged.gtdStatus  = incoming.gtdStatus;
+  if (incoming.contentType)                                   merged.contentType = incoming.contentType;
+  if (incoming.urgency)                                       merged.urgency    = incoming.urgency;
+  if (incoming.importance)                                    merged.importance = incoming.importance;
+
+  merged.updatedAt = Date.now();
+  return merged;
+}
+
 // Merges imported bookmarks, updating in place when the URL already exists.
 async function importBookmarkList(rawList, resolveFolder) {
   const existing = await getBookmarks();
   const merged   = [...existing];
-  let count = 0;
+  let added   = 0;
+  let skipped = 0;
 
   for (const raw of rawList) {
     const b = sanitizeBookmark(raw);
@@ -901,15 +931,21 @@ async function importBookmarkList(rawList, resolveFolder) {
     b.folderId = resolveFolder(b.folderId);
     const idx = merged.findIndex(e => e.url === b.url);
     if (idx >= 0) {
-      merged[idx] = { ...merged[idx], ...b, id: merged[idx].id, createdAt: merged[idx].createdAt };
+      merged[idx] = mergeImportedBookmark(merged[idx], b, raw);
     } else {
+      // The id index is a single sync item with the same 8 KB cap (~545 ids),
+      // so stop before storageSet would reject the whole batch.
+      if (syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]) > SYNC_ITEM_QUOTA) {
+        skipped += rawList.length - rawList.indexOf(raw);
+        break;
+      }
       merged.push(b);
     }
-    count++;
+    added++;
   }
 
-  if (count) await saveBookmarks(merged);
-  return count;
+  if (added) await saveBookmarks(merged);
+  return { added, skipped };
 }
 
 // Notes and tasks have no natural unique key the way bookmarks have a URL, so
@@ -923,6 +959,7 @@ async function importNoteList(rawList, resolveFolder) {
 
   const toSet  = {};
   const newIds = [];
+  let skipped  = 0;
 
   for (const raw of rawList) {
     const note = sanitizeNote(raw);
@@ -935,17 +972,24 @@ async function importNoteList(rawList, resolveFolder) {
     const packed = compactBookmark(note);
     // Oversized entries would be rejected by chrome.storage.sync; skip them
     // rather than failing the whole import.
-    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) continue;
+    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) { skipped++; continue; }
+
+    // The id index is itself one sync item with the same 8 KB cap (~545 ids),
+    // so stop before storageSet would reject the whole batch.
+    if (syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]) > SYNC_ITEM_QUOTA) {
+      skipped++;
+      break;
+    }
 
     toSet[key] = packed;
     newIds.push(note.id);
     seen.add(dedupeKey);
   }
 
-  if (!newIds.length) return 0;
+  if (!newIds.length) return { added: 0, skipped };
   toSet[NOTE_INDEX_KEY] = [...newIds, ...ids];
   await storageSet(toSet);
-  return newIds.length;
+  return { added: newIds.length, skipped };
 }
 
 async function importTaskList(rawList, resolveFolder) {
@@ -956,6 +1000,7 @@ async function importTaskList(rawList, resolveFolder) {
 
   const toSet  = {};
   const newIds = [];
+  let skipped  = 0;
 
   for (const raw of rawList) {
     const task = sanitizeTask(raw);
@@ -966,45 +1011,61 @@ async function importTaskList(rawList, resolveFolder) {
 
     const key    = TASK_PREFIX + task.id;
     const packed = compactBookmark(task);
-    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) continue;
+    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) { skipped++; continue; }
+
+    // The id index is itself one sync item with the same 8 KB cap (~545 ids),
+    // so stop before storageSet would reject the whole batch.
+    if (syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]) > SYNC_ITEM_QUOTA) {
+      skipped++;
+      break;
+    }
 
     toSet[key] = packed;
     newIds.push(task.id);
     seen.add(dedupeKey);
   }
 
-  if (!newIds.length) return 0;
+  if (!newIds.length) return { added: 0, skipped };
   toSet[TASK_INDEX_KEY] = [...newIds, ...ids];
   await storageSet(toSet);
-  return newIds.length;
+  return { added: newIds.length, skipped };
 }
 
 // Imports any combination of the four object types in one pass. Folders are
 // merged first so items can be remapped onto their resolved ids.
 async function importData(payload) {
-  const counts = { bookmarks: 0, notes: 0, tasks: 0, folders: 0, skippedFolders: 0 };
+  // `skipped` counts entries dropped because a sync key was full, so the UI
+  // can say so rather than reporting a silently partial restore.
+  const counts = {
+    bookmarks: 0, notes: 0, tasks: 0, folders: 0,
+    skipped: { bookmarks: 0, notes: 0, tasks: 0, folders: 0 }
+  };
   const list = key => (Array.isArray(payload[key]) ? payload[key].slice(0, MAX_IMPORT_ITEMS) : []);
+
+  const record = (type, res) => {
+    counts[type] = res.added;
+    counts.skipped[type] = res.skipped;
+  };
 
   let idMap = new Map();
   const folders = list('folders');
   if (folders.length) {
     const res = await importFolders(folders);
     idMap = res.idMap;
-    counts.folders = res.added;
-    counts.skippedFolders = res.skipped;
+    record('folders', res);
   }
 
   const existingFolderIds = new Set((await getFolders()).map(f => f.id));
   const resolveFolder = makeFolderResolver(idMap, existingFolderIds);
 
   const bookmarks = list('bookmarks');
-  if (bookmarks.length) counts.bookmarks = await importBookmarkList(bookmarks, resolveFolder);
+  if (bookmarks.length) record('bookmarks', await importBookmarkList(bookmarks, resolveFolder));
 
   const notes = list('notes');
-  if (notes.length) counts.notes = await importNoteList(notes, resolveFolder);
+  if (notes.length) record('notes', await importNoteList(notes, resolveFolder));
 
   const tasks = list('tasks');
-  if (tasks.length) counts.tasks = await importTaskList(tasks, resolveFolder);
+  if (tasks.length) record('tasks', await importTaskList(tasks, resolveFolder));
 
   return counts;
 }
