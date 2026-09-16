@@ -75,6 +75,8 @@ function createStorageMock() {
 /**
  * Loads background.js into an isolated vm context with a mocked Chrome API.
  *
+ * options.seed – storage entries written before background.js runs.
+ *
  * Returns:
  *   context        – the vm sandbox (all top-level functions are properties)
  *   storage        – in-memory storage mock (inspect `._data` for raw values)
@@ -82,9 +84,14 @@ function createStorageMock() {
  *   chrome         – the chrome API mock object
  *   msgListeners   – the raw array of registered onMessage listeners
  */
-function createBgContext() {
+function createBgContext(options = {}) {
   const storage      = createStorageMock();
   const msgListeners = [];
+
+  // background.js reads storage as soon as it loads (it refreshes the badge),
+  // so anything a test needs to be already present — legacy data for the
+  // migration path, for instance — has to be seeded before that happens.
+  if (options.seed) Object.assign(storage._data, options.seed);
 
   const chrome = {
     runtime: {

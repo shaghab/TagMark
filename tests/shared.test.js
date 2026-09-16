@@ -85,8 +85,11 @@ describe('escAttr', () => {
     expect(escAttr('<div>')).toBe('<div>');
   });
 
-  test('does NOT escape &', () => {
-    expect(escAttr('a & b')).toBe('a & b');
+  // & is escaped so an already-encoded entity in user text cannot survive a
+  // decode pass and smuggle a quote out of the attribute.
+  test('escapes &', () => {
+    expect(escAttr('a & b')).toBe('a &amp; b');
+    expect(escAttr('&quot;')).toBe('&amp;quot;');
   });
 
   test('coerces non-strings', () => {

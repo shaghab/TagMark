@@ -11,6 +11,10 @@
 
 const { createBgContext, createStorageMock } = require('./helpers/bg-context');
 
+// background.js calls chrome.tabs.query both callback-style and promise-style,
+// so a stub standing in for it has to answer either way.
+const queryStub = tabs => (_, cb) => (typeof cb === 'function' ? cb(tabs) : Promise.resolve(tabs));
+
 // ── isValidUrl ────────────────────────────────────────────────────────────────
 
 describe('isValidUrl', () => {
@@ -19,7 +23,8 @@ describe('isValidUrl', () => {
 
   test('accepts http: URLs', ()  => expect(isValidUrl('http://example.com')).toBe(true));
   test('accepts https: URLs', () => expect(isValidUrl('https://example.com/path')).toBe(true));
-  test('accepts file: URLs', ()  => expect(isValidUrl('file:///home/user/doc.html')).toBe(true));
+  // Only http(s) is allowed — file: was dropped from ALLOWED_URL_SCHEMES.
+  test('rejects file: URLs', ()   => expect(isValidUrl('file:///home/user/doc.html')).toBe(false));
 
   test('rejects chrome:// URLs',     () => expect(isValidUrl('chrome://settings')).toBe(false));
   test('rejects javascript: URLs',   () => expect(isValidUrl('javascript:alert(1)')).toBe(false));
@@ -423,9 +428,9 @@ describe('handleMessage: delete-bookmark', () => {
     expect(bookmarks.length).toBe(0);
   });
 
-  test('returns { success: true } even for a non-existent id', async () => {
+  test('reports failure for a non-existent id', async () => {
     const result = await sendMessage({ action: 'delete-bookmark', id: 'no-such-id' });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: false });
   });
 
   test('only removes the targeted bookmark when multiple exist', async () => {
@@ -869,7 +874,7 @@ describe('notifyDashboard', () => {
     const { chrome, sendMessage } = createBgContext();
     const dashboardUrl = chrome.runtime.getURL('dashboard.html');
 
-    chrome.tabs.query = (_, cb) => cb([{ id: 99, url: dashboardUrl }]);
+    chrome.tabs.query = queryStub([{ id: 99, url: dashboardUrl }]);
     // tabs.sendMessage is NOT overridden — the original mock (line 92) is used.
 
     const saved = await sendMessage({ action: 'save-bookmark', bookmark: {
@@ -877,7 +882,7 @@ describe('notifyDashboard', () => {
     }});
     // delete-bookmark always calls notifyDashboard
     const result = await sendMessage({ action: 'delete-bookmark', id: saved.id });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, trashed: true });
   });
 
   test('sends a message to an open dashboard tab', async () => {
@@ -885,7 +890,7 @@ describe('notifyDashboard', () => {
     const sentMessages = [];
     const dashboardUrl = chrome.runtime.getURL('dashboard.html');
 
-    chrome.tabs.query = (_, cb) => cb([{ id: 99, url: dashboardUrl }]);
+    chrome.tabs.query = queryStub([{ id: 99, url: dashboardUrl }]);
     chrome.tabs.sendMessage = (tabId, msg) => {
       sentMessages.push({ tabId, msg });
       return Promise.resolve();
@@ -905,7 +910,7 @@ describe('notifyDashboard', () => {
     const { chrome, sendMessage } = createBgContext();
     const sentMessages = [];
 
-    chrome.tabs.query = (_, cb) => cb([
+    chrome.tabs.query = queryStub([
       { id: 1, url: 'https://example.com/dashboard.html' }, // not this extension's URL
       { id: 2, url: null },                                  // tab with no URL
     ]);
@@ -962,17 +967,18 @@ describe('storage sharding', () => {
 // ── Legacy storage migration ──────────────────────────────────────────────────
 
 describe('migrateLegacyStorage', () => {
-  let sendMessage, storage;
-  beforeEach(() => { ({ sendMessage, storage } = createBgContext()); });
+  const LEGACY = [
+    { id: 'abc1', url: 'https://a.com', title: 'A', tags: [], notes: '', pinned: false, createdAt: 1000, updatedAt: 1000, favIconUrl: '' },
+    { id: 'abc2', url: 'https://b.com', title: 'B', tags: [], notes: '', pinned: false, createdAt: 2000, updatedAt: 2000, favIconUrl: '' },
+  ];
+
+  // background.js reads bookmarks as it boots (to refresh the badge), which is
+  // what triggers the migration — so the legacy data has to be seeded before
+  // the script loads, exactly as it would already be on a real profile.
+  const withLegacy = () => createBgContext({ seed: { tagmark_bookmarks: LEGACY } });
 
   test('migrates the old tagmark_bookmarks array to per-bookmark keys', async () => {
-    const legacy = [
-      { id: 'abc1', url: 'https://a.com', title: 'A', tags: [], notes: '', pinned: false, createdAt: 1000, updatedAt: 1000, favIconUrl: '' },
-      { id: 'abc2', url: 'https://b.com', title: 'B', tags: [], notes: '', pinned: false, createdAt: 2000, updatedAt: 2000, favIconUrl: '' },
-    ];
-    // Pre-populate legacy key; absence of tagmark_index triggers migration
-    storage._data['tagmark_bookmarks'] = legacy;
-
+    const { sendMessage } = withLegacy();
     const bookmarks = await sendMessage({ action: 'get-bookmarks' });
 
     expect(bookmarks.length).toBe(2);
@@ -981,22 +987,19 @@ describe('migrateLegacyStorage', () => {
   });
 
   test('removes the legacy key after migration', async () => {
-    storage._data['tagmark_bookmarks'] = [
-      { id: 'abc1', url: 'https://a.com', title: 'A', tags: [], notes: '', pinned: false, createdAt: 1000, updatedAt: 1000, favIconUrl: '' },
-    ];
+    const { sendMessage, storage } = withLegacy();
     await sendMessage({ action: 'get-bookmarks' });
     expect(storage._data['tagmark_bookmarks']).toBeUndefined();
   });
 
   test('creates the new tagmark_index after migration', async () => {
-    storage._data['tagmark_bookmarks'] = [
-      { id: 'abc1', url: 'https://a.com', title: 'A', tags: [], notes: '', pinned: false, createdAt: 1000, updatedAt: 1000, favIconUrl: '' },
-    ];
+    const { sendMessage, storage } = withLegacy();
     await sendMessage({ action: 'get-bookmarks' });
-    expect(Array.isArray(storage._data['tagmark_index'])).toBe(true);
+    expect(storage._data['tagmark_index']).toEqual(['abc1', 'abc2']);
   });
 
   test('initialises an empty index for a fresh install (no legacy data)', async () => {
+    const { sendMessage, storage } = createBgContext();
     const bookmarks = await sendMessage({ action: 'get-bookmarks' });
     expect(bookmarks).toEqual([]);
     expect(Array.isArray(storage._data['tagmark_index'])).toBe(true);
