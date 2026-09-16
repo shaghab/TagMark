@@ -535,6 +535,58 @@ describe('import-data: sibling folders with the same name', () => {
   });
 });
 
+// ── Identity encoding ────────────────────────────────────────────────────────
+
+describe('import-data: dedupe identities are unambiguous', () => {
+  const NUL = String.fromCharCode(0);
+
+  // JSON permits \u0000 and the sanitizers only truncate, so any separator
+  // character can appear inside a field. Joining on one collides.
+  test('a NUL inside a field does not collide with the field boundary', async () => {
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { notes: [
+        { title: `a${NUL}b`, content: 'c', createdAt: 1000 },
+        { title: 'a', content: `b${NUL}c`, createdAt: 1000 },
+      ] },
+    });
+
+    expect(result.counts.notes).toBe(2);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(2);
+  });
+
+  test('a comma inside a tag does not collide with the tag separator', async () => {
+    // normalizeTags lowercases and hyphenates whitespace but keeps commas.
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { notes: [
+        { title: 'T', content: 'C', createdAt: 1000, tags: ['a,b'] },
+        { title: 'T', content: 'C', createdAt: 1000, tags: ['a', 'b'] },
+      ] },
+    });
+
+    expect(result.counts.notes).toBe(2);
+  });
+
+  test('the same collision class is handled for tasks', async () => {
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { tasks: [
+        { title: `a${NUL}b`, notes: 'c', createdAt: 1000 },
+        { title: 'a', notes: `b${NUL}c`, createdAt: 1000 },
+      ] },
+    });
+
+    expect(result.counts.tasks).toBe(2);
+  });
+
+  test('a genuinely identical record still collapses', async () => {
+    const note = { title: 'N', content: 'c', createdAt: 1000, tags: ['x'], pinned: true };
+    const result = await sendMessage({ action: 'import-data', data: { notes: [note, { ...note }] } });
+    expect(result.counts.notes).toBe(1);
+  });
+});
+
 // ── Folder graph resolution ──────────────────────────────────────────────────
 
 describe('import-data: resolving the folder graph', () => {
@@ -780,6 +832,30 @@ describe('import-data: collection index quota', () => {
     Object.entries(storage._data).forEach(([k, v]) => {
       expect(k.length + JSON.stringify(v).length).toBeLessThanOrEqual(8192);
     });
+  });
+
+  test('a merge onto an existing bookmark is bounded by the quota too', async () => {
+    await sendMessage({ action: 'save-bookmark', bookmark: { url: 'https://example.com/a', title: 'Small' } });
+    await sendMessage({ action: 'save-bookmark', bookmark: { url: 'https://example.com/b', title: 'Other' } });
+
+    // Merging this onto the existing entry would push it past the per-item cap.
+    const result = await sendMessage({
+      action: 'import-data',
+      data: { bookmarks: [
+        { url: 'https://example.com/a', title: 'T'.repeat(2000), notes: 'N'.repeat(10000) },
+        { url: 'https://new-one.com', title: 'Fine' },
+      ] },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.counts.skipped.bookmarks).toBe(1);
+    expect(result.counts.bookmarks).toBe(1);
+
+    // The stored entry is left as it was, and the rest of the batch lands.
+    const stored = await sendMessage({ action: 'get-bookmarks' });
+    expect(stored).toHaveLength(3);
+    expect(stored.find(b => b.url === 'https://example.com/a').title).toBe('Small');
+    expect(stored.find(b => b.url === 'https://new-one.com')).toBeDefined();
   });
 
   test('a normal-sized batch reports nothing skipped', async () => {

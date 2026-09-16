@@ -802,10 +802,6 @@ function sanitizeFolder(raw) {
 // the background must not trust its callers either (CWE-400).
 const MAX_IMPORT_ITEMS = 10000;
 
-// Separator used to build "same item" dedupe keys. A NUL byte cannot appear in
-// a title or body, so it cannot be spoofed to force a false match.
-const DEDUPE_SEP = String.fromCharCode(0);
-
 // Merges imported folders into the existing tree.
 //
 // Imported folder ids are rewritten (sanitizeFolder assigns fresh ones), so
@@ -969,23 +965,29 @@ async function syncBudget() {
 // every import, so such a record falls back to a text-only identity: with no
 // timestamp there is nothing to tell two same-text records apart anyway, and
 // matching on text keeps re-importing that file a no-op.
+// The tuple is JSON-encoded rather than joined on a separator. Joining is
+// ambiguous for any character the fields may contain, and they may contain
+// anything: JSON permits \u0000, and the sanitizers only truncate rather than
+// strip control characters, so title "a\0b" + content "c" and title "a" +
+// content "b\0c" would collide and silently drop the second record. Tags go in
+// as an array for the same reason — normalizeTags does not remove commas.
 function noteIdentity(note, withTimestamp = true) {
   const parts = [
-    note.title, note.content, (note.tags || []).join(','),
-    note.pinned ? '1' : '0', note.folderId || ''
+    note.title, note.content, note.tags || [],
+    Boolean(note.pinned), note.folderId || null
   ];
   if (withTimestamp) parts.push(note.createdAt);
-  return parts.join(DEDUPE_SEP);
+  return JSON.stringify(parts);
 }
 
 function taskIdentity(task, withTimestamp = true) {
   const parts = [
-    task.title, task.notes || '', (task.tags || []).join(','),
-    task.pinned ? '1' : '0', task.folderId || '',
-    task.gtdStatus || '', task.urgency || '', task.importance || ''
+    task.title, task.notes || '', task.tags || [],
+    Boolean(task.pinned), task.folderId || null,
+    task.gtdStatus || null, task.urgency || null, task.importance || null
   ];
   if (withTimestamp) parts.push(task.createdAt);
-  return parts.join(DEDUPE_SEP);
+  return JSON.stringify(parts);
 }
 
 // True when the file actually supplied a usable creation time.
@@ -1009,8 +1011,22 @@ async function importBookmarkList(rawList, resolveFolder) {
 
     const idx = merged.findIndex(e => e.url === b.url);
     if (idx >= 0) {
-      // An update reuses an existing key, so it costs no new index room.
-      merged[idx] = mergeImportedBookmark(merged[idx], b, rawList[i]);
+      // An update reuses an existing key, so it costs no new index room — but
+      // merging a long title or notes onto an existing bookmark can still push
+      // the value past the per-item cap or the total. Leave the stored entry
+      // untouched rather than let one update reject the whole batch.
+      const updated  = mergeImportedBookmark(merged[idx], b, rawList[i]);
+      const key      = BM_PREFIX + updated.id;
+      const size     = syncItemSize(key, compactBookmark(updated));
+      const prevSize = syncItemSize(key, compactBookmark(merged[idx]));
+
+      if (size > SYNC_ITEM_QUOTA || budget.used + (size - prevSize) > budget.limit) {
+        skipped++;
+        continue;
+      }
+
+      budget.used += size - prevSize;
+      merged[idx] = updated;
       added++;
       continue;
     }
