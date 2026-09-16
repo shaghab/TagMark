@@ -2145,9 +2145,20 @@
       return Number.isFinite(n) && n > 0 ? n * 1000 : undefined;
     };
 
-    const walk = (dl, parentId, depth) => {
-      // Guard against pathologically nested files.
-      if (depth > 20) return;
+    // Walk iteratively with an explicit stack. Recursion with a depth limit
+    // would silently discard everything below it — a browser export nested
+    // deeper than the limit would import as a success with a subtree missing —
+    // and recursing without one risks blowing the stack. `visited` guards
+    // against a malformed file whose lists reference each other in a loop.
+    const visited = new Set();
+    const stack   = [{ dl: root, parentId: null }];
+
+    while (stack.length) {
+      const { dl, parentId } = stack.pop();
+      if (visited.has(dl)) continue;
+      visited.add(dl);
+
+      const descend = [];
 
       Array.from(dl.children).filter(el => el.tagName === 'DT').forEach(dt => {
         const h3 = dt.querySelector(':scope > h3');
@@ -2162,7 +2173,7 @@
           };
           if (folder.name) data.folders.push(folder);
           const nested = nestedList(dt);
-          if (nested) walk(nested, folder.name ? folder.id : parentId, depth + 1);
+          if (nested) descend.push({ dl: nested, parentId: folder.name ? folder.id : parentId });
         } else if (a && a.getAttribute('href')) {
           data.bookmarks.push({
             url:        a.getAttribute('href'),
@@ -2176,9 +2187,11 @@
           });
         }
       });
-    };
 
-    walk(root, null, 0);
+      // Reverse so sibling subtrees are visited in document order.
+      for (let i = descend.length - 1; i >= 0; i--) stack.push(descend[i]);
+    }
+
     return data;
   }
 

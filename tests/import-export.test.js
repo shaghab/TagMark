@@ -535,6 +535,66 @@ describe('import-data: sibling folders with the same name', () => {
   });
 });
 
+// ── Folder graph resolution ──────────────────────────────────────────────────
+
+describe('import-data: resolving the folder graph', () => {
+  // Folders listed child-first force every parent lookup to miss on the first
+  // pass. Resolving by repeated scans of the remaining list degrades to cubic
+  // work here and stalls the worker well inside the 10,000-entry cap.
+  const reverseChain = n => Array.from({ length: n }, (_, i) => ({
+    id: `f${i}`,
+    name: `Folder ${i}`,
+    parentId: i + 1 < n ? `f${i + 1}` : null,
+  }));
+
+  test('a deep reverse-ordered chain still nests correctly', async () => {
+    await sendMessage({ action: 'import-data', data: { folders: reverseChain(20) } });
+
+    const folders = await sendMessage({ action: 'get-folders' });
+    const byName = new Map(folders.map(f => [f.name, f]));
+
+    // Folder 0 is the deepest leaf; folder 19 is the root.
+    expect(byName.get('Folder 19').parentId).toBeNull();
+    for (let i = 0; i < 19; i++) {
+      expect(byName.get(`Folder ${i}`).parentId).toBe(byName.get(`Folder ${i + 1}`).id);
+    }
+  });
+
+  test('a chain at the import cap resolves in linear time', async () => {
+    const started = Date.now();
+    await sendMessage({ action: 'import-data', data: { folders: reverseChain(10000) } });
+    const elapsed = Date.now() - started;
+
+    // The superlinear version took minutes at this size; a generous ceiling
+    // catches a regression without being timing-flaky.
+    expect(elapsed).toBeLessThan(15000);
+  }, 30000);
+
+  test('a parent cycle still terminates and lands its members at root', async () => {
+    await sendMessage({
+      action: 'import-data',
+      data: { folders: [
+        { id: 'a', name: 'A', parentId: 'b' },
+        { id: 'b', name: 'B', parentId: 'c' },
+        { id: 'c', name: 'C', parentId: 'a' },
+      ] },
+    });
+
+    const folders = await sendMessage({ action: 'get-folders' });
+    ['A', 'B', 'C'].forEach(name => expect(folders.find(f => f.name === name)).toBeDefined());
+  });
+
+  test('a folder whose parent was skipped lands at root, not dangling', async () => {
+    await sendMessage({ action: 'import-data', data: { folders: reverseChain(10000) } });
+
+    const folders = await sendMessage({ action: 'get-folders' });
+    const ids = new Set(folders.map(f => f.id));
+    folders.forEach(f => {
+      if (f.parentId !== null) expect(ids.has(f.parentId)).toBe(true);
+    });
+  });
+});
+
 // ── Sync quota ───────────────────────────────────────────────────────────────
 
 describe('import-data: folder sync quota', () => {
@@ -657,6 +717,25 @@ describe('import-data: collection index quota', () => {
     // Every input is either imported or counted as skipped.
     expect(result.counts.notes + result.counts.skipped.notes).toBe(900);
     expect(result.counts.skipped.notes).toBeGreaterThan(1);
+  });
+
+  test('the folder tree is bounded by total sync bytes too', async () => {
+    // Fill most of sync with notes first, then try to import a folder tree.
+    const fat = Array.from({ length: 540 }, (_, i) => ({
+      title: `Note ${i}`, content: 'x'.repeat(300),
+    }));
+    await sendMessage({ action: 'import-data', data: { notes: fat } });
+
+    const folders = Array.from({ length: 300 }, (_, i) => ({
+      id: `f${i}`, name: `Imported Folder Number ${i}`, parentId: null,
+    }));
+    const result = await sendMessage({ action: 'import-data', data: { folders } });
+
+    expect(result.counts.skipped.folders).toBeGreaterThan(0);
+
+    const totalBytes = Object.entries(storage._data)
+      .reduce((sum, [k, v]) => sum + k.length + JSON.stringify(v).length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(102400);
   });
 
   test('a normal-sized batch reports nothing skipped', async () => {

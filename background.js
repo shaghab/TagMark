@@ -818,68 +818,88 @@ async function importFolders(rawFolders) {
   const existing = await getFolders();
   const merged   = [...existing];
   const idMap    = new Map();
+  const budget   = await syncBudget();
 
-  // Parents must resolve before their children, so walk the list repeatedly
-  // until no further progress is possible.
-  let pending  = rawFolders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
-  let rootOnly = false;
+  // The whole tree lives under one key, so its cost against the aggregate
+  // quota is how much that value grows, not its full size.
+  const baseSize = syncItemSize(FOLDERS_KEY, existing);
 
-  // The entire folder tree is stored under one key, and chrome.storage.sync
-  // caps a single item at 8 KB — roughly a hundred folders. A browser export
-  // can easily exceed that, so stop adding once the next folder would
-  // overflow the key instead of letting storageSet reject the whole import.
-  // Items pointing at a folder we skipped fall back to unfiled.
-  let quotaReached = false;
-  let skipped = 0;
+  const list = rawFolders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
+
+  // Index by source id so finding a parent never scans the list. A repeated
+  // id is ambiguous, so the first occurrence wins.
+  const bySourceId = new Map();
+  for (const raw of list) {
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    if (id && !bySourceId.has(id)) bySourceId.set(id, raw);
+  }
+
+  const parentOf = raw => {
+    const pid = typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null;
+    return pid && bySourceId.has(pid) ? bySourceId.get(pid) : null;
+  };
+
+  // Order parents before children in a single linear sweep: walk each folder's
+  // ancestor chain, then emit it root-first. Resolving by repeated passes over
+  // the remaining list instead would degrade to cubic work on a reverse-ordered
+  // chain and stall the worker well inside the 10,000-entry cap. A chain that
+  // loops back on itself stops there, so a cycle member lands at root.
+  const order   = [];
+  const ordered = new Set();
+  for (const raw of list) {
+    if (ordered.has(raw)) continue;
+    const chain = [];
+    const seen  = new Set();
+    let cur = raw;
+    while (cur && !ordered.has(cur) && !seen.has(cur)) {
+      seen.add(cur);
+      chain.push(cur);
+      cur = parentOf(cur);
+    }
+    for (let i = chain.length - 1; i >= 0; i--) {
+      order.push(chain[i]);
+      ordered.add(chain[i]);
+    }
+  }
 
   // Sibling folders may share a name — the create and rename handlers allow
   // it — so an existing folder can only stand in for ONE folder from this
   // payload. Claiming it keeps two same-named siblings in a backup distinct
   // while still letting a repeated import reuse what it created last time.
   const claimed = new Set();
+  let quotaReached = false;
+  let skipped = 0;
 
-  while (pending.length) {
-    const deferred = [];
-    let progressed = false;
+  for (const raw of order) {
+    const oldParent = typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null;
+    // Parents were emitted first, so a resolvable one is already mapped.
+    // Anything else — unknown, skipped or cyclic — falls back to a root folder.
+    const newParent = oldParent && idMap.has(oldParent) ? idMap.get(oldParent) : null;
 
-    for (const raw of pending) {
-      const oldParent = typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null;
-      let newParent = null;
+    const clean = sanitizeFolder(raw);
+    if (!clean) continue;
+    clean.parentId = newParent;
 
-      if (oldParent) {
-        if (idMap.has(oldParent)) {
-          newParent = idMap.get(oldParent);
-        } else if (!rootOnly && pending.some(p => p !== raw && p.id === oldParent)) {
-          deferred.push(raw); // parent is still queued — retry on the next pass
-          continue;
-        }
-        // Unknown or cyclic parent — fall back to a root folder.
+    const match = merged.find(f =>
+      f.name === clean.name && (f.parentId || null) === newParent && !claimed.has(f.id));
+
+    if (!match) {
+      // Stop on either ceiling: this key's own 8 KB cap (~102 folders), or the
+      // total sync quota, which the growth of this value counts against.
+      const nextSize = syncItemSize(FOLDERS_KEY, [...merged, clean]);
+      if (quotaReached ||
+          nextSize > SYNC_ITEM_QUOTA ||
+          budget.used + (nextSize - baseSize) > budget.limit) {
+        quotaReached = true;
+        skipped++;
+        continue; // no idMap entry, so its items resolve to unfiled
       }
-
-      progressed = true;
-      const clean = sanitizeFolder(raw);
-      if (!clean) continue;
-      clean.parentId = newParent;
-
-      const match = merged.find(f =>
-        f.name === clean.name && (f.parentId || null) === newParent && !claimed.has(f.id));
-      if (!match) {
-        if (quotaReached || syncItemSize(FOLDERS_KEY, [...merged, clean]) > SYNC_ITEM_QUOTA) {
-          quotaReached = true;
-          skipped++;
-          continue; // no idMap entry, so its items resolve to unfiled
-        }
-        merged.push(clean);
-      }
-      const resolvedId = match ? match.id : clean.id;
-      claimed.add(resolvedId);
-      if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, resolvedId);
+      merged.push(clean);
     }
 
-    // A pass that resolved nothing means the remainder is a parent cycle.
-    // Flatten those to root on the next pass rather than looping forever.
-    if (!progressed && deferred.length) rootOnly = true;
-    pending = deferred;
+    const resolvedId = match ? match.id : clean.id;
+    claimed.add(resolvedId);
+    if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, resolvedId);
   }
 
   if (merged.length !== existing.length) await saveFolders(merged);
@@ -978,6 +998,7 @@ async function importBookmarkList(rawList, resolveFolder) {
   const existing = await getBookmarks();
   const merged   = [...existing];
   const budget   = await syncBudget();
+  const baseIndexSize = syncItemSize(INDEX_KEY, existing.map(e => e.id));
   let added   = 0;
   let skipped = 0;
 
@@ -996,9 +1017,13 @@ async function importBookmarkList(rawList, resolveFolder) {
 
     const key  = BM_PREFIX + b.id;
     const size = syncItemSize(key, compactBookmark(b));
-    // Stop on either ceiling: this collection's id index, or total sync bytes.
-    if (syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]) > SYNC_ITEM_QUOTA ||
-        budget.used + size > budget.limit) {
+    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
+    // bytes. The index is rewritten wholesale, so its growth counts against
+    // the total alongside the new entry — leaving it out under-reports the
+    // real cost of the write.
+    const nextIndexSize = syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]);
+    if (nextIndexSize > SYNC_ITEM_QUOTA ||
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
       skipped += rawList.length - i;
       break;
     }
@@ -1021,6 +1046,7 @@ async function importNoteList(rawList, resolveFolder) {
   const result   = await storageGet([NOTE_INDEX_KEY]);
   const ids      = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
   const budget   = await syncBudget();
+  const baseIndexSize = syncItemSize(NOTE_INDEX_KEY, ids);
 
   const toSet  = {};
   const newIds = [];
@@ -1043,9 +1069,13 @@ async function importNoteList(rawList, resolveFolder) {
     // rather than failing the whole import.
     if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // Stop on either ceiling, and count everything left rather than just one.
-    if (syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]) > SYNC_ITEM_QUOTA ||
-        budget.used + size > budget.limit) {
+    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
+    // bytes. The index is rewritten wholesale, so its growth counts against
+    // the total alongside the new entry — leaving it out under-reports the
+    // real cost of the write.
+    const nextIndexSize = syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]);
+    if (nextIndexSize > SYNC_ITEM_QUOTA ||
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
       skipped += rawList.length - i;
       break;
     }
@@ -1072,6 +1102,7 @@ async function importTaskList(rawList, resolveFolder) {
   const result   = await storageGet([TASK_INDEX_KEY]);
   const ids      = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
   const budget   = await syncBudget();
+  const baseIndexSize = syncItemSize(TASK_INDEX_KEY, ids);
 
   const toSet  = {};
   const newIds = [];
@@ -1091,8 +1122,13 @@ async function importTaskList(rawList, resolveFolder) {
     const size   = syncItemSize(key, packed);
     if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    if (syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]) > SYNC_ITEM_QUOTA ||
-        budget.used + size > budget.limit) {
+    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
+    // bytes. The index is rewritten wholesale, so its growth counts against
+    // the total alongside the new entry — leaving it out under-reports the
+    // real cost of the write.
+    const nextIndexSize = syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]);
+    if (nextIndexSize > SYNC_ITEM_QUOTA ||
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
       skipped += rawList.length - i;
       break;
     }
