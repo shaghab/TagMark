@@ -394,6 +394,147 @@ describe('import-data: merging onto an existing bookmark', () => {
   });
 });
 
+// ── Distinct records that happen to share their text ─────────────────────────
+
+describe('import-data: records with matching text but different metadata', () => {
+  // TagMark lets you create two notes with the same title and body, so a
+  // backup containing both has to restore both.
+  test('two notes sharing title and content both survive a restore', async () => {
+    await sendMessage({ action: 'save-note', note: { title: 'Meeting', content: 'agenda', tags: ['work'], pinned: true } });
+    await new Promise(r => setTimeout(r, 5));
+    await sendMessage({ action: 'save-note', note: { title: 'Meeting', content: 'agenda', tags: ['personal'] } });
+
+    const data  = await sendMessage({ action: 'export-data' });
+    const fresh = createBgContext();
+    await fresh.sendMessage({ action: 'import-data', data });
+
+    const notes = await fresh.sendMessage({ action: 'get-notes' });
+    expect(notes).toHaveLength(2);
+    expect(notes.map(n => n.tags.join()).sort()).toEqual(['personal', 'work']);
+    expect(notes.find(n => n.tags.includes('work')).pinned).toBe(true);
+  });
+
+  test('two tasks sharing title and notes both survive a restore', async () => {
+    await sendMessage({ action: 'save-task', task: { title: 'Review', notes: 'the doc', gtdStatus: 'next' } });
+    await new Promise(r => setTimeout(r, 5));
+    await sendMessage({ action: 'save-task', task: { title: 'Review', notes: 'the doc', gtdStatus: 'waiting' } });
+
+    const data  = await sendMessage({ action: 'export-data' });
+    const fresh = createBgContext();
+    await fresh.sendMessage({ action: 'import-data', data });
+
+    const tasks = await fresh.sendMessage({ action: 'get-tasks' });
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map(t => t.gtdStatus).sort()).toEqual(['next', 'waiting']);
+  });
+
+  test('re-importing the same backup is still a no-op', async () => {
+    await sendMessage({ action: 'save-note', note: { title: 'Meeting', content: 'agenda', tags: ['work'] } });
+    await new Promise(r => setTimeout(r, 5));
+    await sendMessage({ action: 'save-note', note: { title: 'Meeting', content: 'agenda', tags: ['personal'] } });
+
+    const data  = await sendMessage({ action: 'export-data' });
+    const fresh = createBgContext();
+    await fresh.sendMessage({ action: 'import-data', data });
+    const second = await fresh.sendMessage({ action: 'import-data', data });
+
+    expect(second.counts.notes).toBe(0);
+    expect(await fresh.sendMessage({ action: 'get-notes' })).toHaveLength(2);
+  });
+
+  test('a note differing only in pin state is kept', async () => {
+    await sendMessage({
+      action: 'import-data',
+      data: { notes: [
+        { title: 'N', content: 'c', createdAt: 1000, pinned: true },
+        { title: 'N', content: 'c', createdAt: 1000, pinned: false },
+      ] },
+    });
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(2);
+  });
+
+  test('a genuinely identical record is still collapsed', async () => {
+    const note = { title: 'N', content: 'c', createdAt: 1000, tags: ['x'], pinned: true };
+    const result = await sendMessage({ action: 'import-data', data: { notes: [note, { ...note }] } });
+    expect(result.counts.notes).toBe(1);
+  });
+});
+
+describe('import-data: records with no timestamp in the file', () => {
+  // Without a createdAt there is nothing to tell two same-text records apart,
+  // so they collapse — and re-importing that file stays a no-op.
+  const payload = { notes: [{ title: 'N', content: 'body' }], tasks: [{ title: 'T', notes: 'detail' }] };
+
+  test('re-importing a timestamp-less file adds nothing the second time', async () => {
+    await sendMessage({ action: 'import-data', data: payload });
+    const second = await sendMessage({ action: 'import-data', data: payload });
+
+    expect(second.counts.notes).toBe(0);
+    expect(second.counts.tasks).toBe(0);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(1);
+    expect(await sendMessage({ action: 'get-tasks' })).toHaveLength(1);
+  });
+
+  test('a timestamp-less record matches one already saved', async () => {
+    await sendMessage({ action: 'save-note', note: { title: 'N', content: 'body' } });
+    const result = await sendMessage({ action: 'import-data', data: payload });
+    expect(result.counts.notes).toBe(0);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(1);
+  });
+});
+
+// ── Same-named sibling folders ───────────────────────────────────────────────
+
+describe('import-data: sibling folders with the same name', () => {
+  test('two same-named siblings in one payload stay distinct', async () => {
+    await sendMessage({
+      action: 'import-data',
+      data: {
+        folders: [
+          { id: 'f1', name: 'Work' },
+          { id: 'f2', name: 'Work' },
+        ],
+        bookmarks: [
+          { url: 'https://a.com', title: 'A', folderId: 'f1' },
+          { url: 'https://b.com', title: 'B', folderId: 'f2' },
+        ],
+      },
+    });
+
+    const folders = (await sendMessage({ action: 'get-folders' })).filter(f => f.name === 'Work');
+    expect(folders).toHaveLength(2);
+
+    // The two bookmarks did not get merged into one folder.
+    const bookmarks = await sendMessage({ action: 'get-bookmarks' });
+    const a = bookmarks.find(b => b.url === 'https://a.com');
+    const b = bookmarks.find(b => b.url === 'https://b.com');
+    expect(a.folderId).not.toBe(b.folderId);
+  });
+
+  test('re-importing that payload still reuses rather than duplicating', async () => {
+    const data = {
+      folders: [{ id: 'f1', name: 'Work' }, { id: 'f2', name: 'Work' }],
+    };
+    await sendMessage({ action: 'import-data', data });
+    const second = await sendMessage({ action: 'import-data', data });
+
+    expect(second.counts.folders).toBe(0);
+    expect((await sendMessage({ action: 'get-folders' })).filter(f => f.name === 'Work')).toHaveLength(2);
+  });
+
+  test('a single folder still matches an existing one of the same name', async () => {
+    const created = await sendMessage({ action: 'create-folder', name: 'Research' });
+    await sendMessage({
+      action: 'import-data',
+      data: {
+        folders: [{ id: 'x', name: 'Research' }],
+        bookmarks: [{ url: 'https://a.com', title: 'A', folderId: 'x' }],
+      },
+    });
+    expect((await sendMessage({ action: 'get-bookmarks' }))[0].folderId).toBe(created.id);
+  });
+});
+
 // ── Sync quota ───────────────────────────────────────────────────────────────
 
 describe('import-data: folder sync quota', () => {
@@ -489,6 +630,33 @@ describe('import-data: collection index quota', () => {
     expect(result.counts.skipped.bookmarks).toBeGreaterThan(0);
     expect(indexBytes(storage, 'tagmark_index')).toBeLessThanOrEqual(8192);
     expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(result.counts.bookmarks);
+  });
+
+  test('a batch is bounded by total sync bytes, not just per-item size', async () => {
+    // Each note is small enough on its own and the index would hold them all,
+    // but together they exceed chrome.storage.sync's total quota.
+    const fat = Array.from({ length: 540 }, (_, i) => ({
+      title: `Note ${i}`,
+      content: 'x'.repeat(300),
+    }));
+
+    const result = await sendMessage({ action: 'import-data', data: { notes: fat } });
+
+    expect(result.counts.skipped.notes).toBeGreaterThan(0);
+    expect(result.counts.notes).toBeGreaterThan(0);
+
+    const totalBytes = Object.entries(storage._data)
+      .reduce((sum, [k, v]) => sum + k.length + JSON.stringify(v).length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(102400);
+  });
+
+  test('the skipped count covers every omitted record, not just one', async () => {
+    const many = Array.from({ length: 900 }, (_, i) => ({ title: `Note ${i}`, content: `body ${i}` }));
+    const result = await sendMessage({ action: 'import-data', data: { notes: many } });
+
+    // Every input is either imported or counted as skipped.
+    expect(result.counts.notes + result.counts.skipped.notes).toBe(900);
+    expect(result.counts.skipped.notes).toBeGreaterThan(1);
   });
 
   test('a normal-sized batch reports nothing skipped', async () => {

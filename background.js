@@ -832,6 +832,12 @@ async function importFolders(rawFolders) {
   let quotaReached = false;
   let skipped = 0;
 
+  // Sibling folders may share a name — the create and rename handlers allow
+  // it — so an existing folder can only stand in for ONE folder from this
+  // payload. Claiming it keeps two same-named siblings in a backup distinct
+  // while still letting a repeated import reuse what it created last time.
+  const claimed = new Set();
+
   while (pending.length) {
     const deferred = [];
     let progressed = false;
@@ -855,7 +861,8 @@ async function importFolders(rawFolders) {
       if (!clean) continue;
       clean.parentId = newParent;
 
-      const match = merged.find(f => f.name === clean.name && (f.parentId || null) === newParent);
+      const match = merged.find(f =>
+        f.name === clean.name && (f.parentId || null) === newParent && !claimed.has(f.id));
       if (!match) {
         if (quotaReached || syncItemSize(FOLDERS_KEY, [...merged, clean]) > SYNC_ITEM_QUOTA) {
           quotaReached = true;
@@ -864,7 +871,9 @@ async function importFolders(rawFolders) {
         }
         merged.push(clean);
       }
-      if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, match ? match.id : clean.id);
+      const resolvedId = match ? match.id : clean.id;
+      claimed.add(resolvedId);
+      if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, resolvedId);
     }
 
     // A pass that resolved nothing means the remainder is a parent cycle.
@@ -918,29 +927,84 @@ function mergeImportedBookmark(existing, incoming, raw) {
   return merged;
 }
 
+// chrome.storage.sync caps total bytes across all keys as well as each item.
+// A bulk import can reach that ceiling even when every individual entry fits,
+// and the write is then rejected wholesale, so a batch tracks its own running
+// total and stops short. The headroom keeps an import from filling sync to the
+// brim and leaving no room to save anything afterwards.
+const SYNC_TOTAL_HEADROOM = 0.95;
+
+async function syncBudget() {
+  const quota = chrome.storage.sync.QUOTA_BYTES || 102400;
+  const used  = await new Promise(resolve => chrome.storage.sync.getBytesInUse(null, resolve));
+  return { used, limit: Math.floor(quota * SYNC_TOTAL_HEADROOM) };
+}
+
+// Two records can legitimately share their text while differing in tags, pin
+// state, folder or creation time — TagMark lets you create exactly that — so a
+// dedupe key covers the whole record rather than just the title and body.
+// createdAt survives the import unchanged, which keeps re-importing the same
+// backup idempotent while keeping genuinely distinct records distinct.
+// A record whose file carried no createdAt was given "now", which would differ on
+// every import, so such a record falls back to a text-only identity: with no
+// timestamp there is nothing to tell two same-text records apart anyway, and
+// matching on text keeps re-importing that file a no-op.
+function noteIdentity(note, withTimestamp = true) {
+  const parts = [
+    note.title, note.content, (note.tags || []).join(','),
+    note.pinned ? '1' : '0', note.folderId || ''
+  ];
+  if (withTimestamp) parts.push(note.createdAt);
+  return parts.join(DEDUPE_SEP);
+}
+
+function taskIdentity(task, withTimestamp = true) {
+  const parts = [
+    task.title, task.notes || '', (task.tags || []).join(','),
+    task.pinned ? '1' : '0', task.folderId || '',
+    task.gtdStatus || '', task.urgency || '', task.importance || ''
+  ];
+  if (withTimestamp) parts.push(task.createdAt);
+  return parts.join(DEDUPE_SEP);
+}
+
+// True when the file actually supplied a usable creation time.
+function hasTimestamp(raw) {
+  return !!raw && typeof raw.createdAt === 'number' && raw.createdAt > 0;
+}
+
 // Merges imported bookmarks, updating in place when the URL already exists.
 async function importBookmarkList(rawList, resolveFolder) {
   const existing = await getBookmarks();
   const merged   = [...existing];
+  const budget   = await syncBudget();
   let added   = 0;
   let skipped = 0;
 
-  for (const raw of rawList) {
-    const b = sanitizeBookmark(raw);
+  for (let i = 0; i < rawList.length; i++) {
+    const b = sanitizeBookmark(rawList[i]);
     if (!b) continue; // skip invalid entries
     b.folderId = resolveFolder(b.folderId);
+
     const idx = merged.findIndex(e => e.url === b.url);
     if (idx >= 0) {
-      merged[idx] = mergeImportedBookmark(merged[idx], b, raw);
-    } else {
-      // The id index is a single sync item with the same 8 KB cap (~545 ids),
-      // so stop before storageSet would reject the whole batch.
-      if (syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]) > SYNC_ITEM_QUOTA) {
-        skipped += rawList.length - rawList.indexOf(raw);
-        break;
-      }
-      merged.push(b);
+      // An update reuses an existing key, so it costs no new index room.
+      merged[idx] = mergeImportedBookmark(merged[idx], b, rawList[i]);
+      added++;
+      continue;
     }
+
+    const key  = BM_PREFIX + b.id;
+    const size = syncItemSize(key, compactBookmark(b));
+    // Stop on either ceiling: this collection's id index, or total sync bytes.
+    if (syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]) > SYNC_ITEM_QUOTA ||
+        budget.used + size > budget.limit) {
+      skipped += rawList.length - i;
+      break;
+    }
+
+    budget.used += size;
+    merged.push(b);
     added++;
   }
 
@@ -948,42 +1012,49 @@ async function importBookmarkList(rawList, resolveFolder) {
   return { added, skipped };
 }
 
-// Notes and tasks have no natural unique key the way bookmarks have a URL, so
-// an identical title + body is treated as the same item and skipped. That
-// makes re-importing the same backup a no-op instead of doubling everything.
 async function importNoteList(rawList, resolveFolder) {
   const existing = await getNotes();
-  const seen     = new Set(existing.map(n => n.title + DEDUPE_SEP + n.content));
+  // Both identities are tracked so a timestamped record and a timestamp-less
+  // one can each be matched against what is already stored.
+  const seen     = new Set(existing.map(r => noteIdentity(r)));
+  const seenText = new Set(existing.map(r => noteIdentity(r, false)));
   const result   = await storageGet([NOTE_INDEX_KEY]);
   const ids      = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
+  const budget   = await syncBudget();
 
   const toSet  = {};
   const newIds = [];
   let skipped  = 0;
 
-  for (const raw of rawList) {
-    const note = sanitizeNote(raw);
+  for (let i = 0; i < rawList.length; i++) {
+    const note = sanitizeNote(rawList[i]);
     if (!note) continue;
-    const dedupeKey = note.title + DEDUPE_SEP + note.content;
-    if (seen.has(dedupeKey)) continue;
+    // Resolve the folder first so the identity matches what is already stored.
     note.folderId = resolveFolder(note.folderId);
+
+    const dated    = hasTimestamp(rawList[i]);
+    const identity = noteIdentity(note, dated);
+    if (dated ? seen.has(identity) : seenText.has(identity)) continue;
 
     const key    = NOTE_PREFIX + note.id;
     const packed = compactBookmark(note);
+    const size   = syncItemSize(key, packed);
     // Oversized entries would be rejected by chrome.storage.sync; skip them
     // rather than failing the whole import.
-    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) { skipped++; continue; }
+    if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // The id index is itself one sync item with the same 8 KB cap (~545 ids),
-    // so stop before storageSet would reject the whole batch.
-    if (syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]) > SYNC_ITEM_QUOTA) {
-      skipped++;
+    // Stop on either ceiling, and count everything left rather than just one.
+    if (syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]) > SYNC_ITEM_QUOTA ||
+        budget.used + size > budget.limit) {
+      skipped += rawList.length - i;
       break;
     }
 
+    budget.used += size;
     toSet[key] = packed;
     newIds.push(note.id);
-    seen.add(dedupeKey);
+    seen.add(noteIdentity(note));
+    seenText.add(noteIdentity(note, false));
   }
 
   if (!newIds.length) return { added: 0, skipped };
@@ -994,35 +1065,43 @@ async function importNoteList(rawList, resolveFolder) {
 
 async function importTaskList(rawList, resolveFolder) {
   const existing = await getTasks();
-  const seen     = new Set(existing.map(t => t.title + DEDUPE_SEP + (t.notes || '')));
+  // Both identities are tracked so a timestamped record and a timestamp-less
+  // one can each be matched against what is already stored.
+  const seen     = new Set(existing.map(r => taskIdentity(r)));
+  const seenText = new Set(existing.map(r => taskIdentity(r, false)));
   const result   = await storageGet([TASK_INDEX_KEY]);
   const ids      = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
+  const budget   = await syncBudget();
 
   const toSet  = {};
   const newIds = [];
   let skipped  = 0;
 
-  for (const raw of rawList) {
-    const task = sanitizeTask(raw);
+  for (let i = 0; i < rawList.length; i++) {
+    const task = sanitizeTask(rawList[i]);
     if (!task) continue;
-    const dedupeKey = task.title + DEDUPE_SEP + task.notes;
-    if (seen.has(dedupeKey)) continue;
     task.folderId = resolveFolder(task.folderId);
+
+    const dated    = hasTimestamp(rawList[i]);
+    const identity = taskIdentity(task, dated);
+    if (dated ? seen.has(identity) : seenText.has(identity)) continue;
 
     const key    = TASK_PREFIX + task.id;
     const packed = compactBookmark(task);
-    if (syncItemSize(key, packed) > SYNC_ITEM_QUOTA) { skipped++; continue; }
+    const size   = syncItemSize(key, packed);
+    if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // The id index is itself one sync item with the same 8 KB cap (~545 ids),
-    // so stop before storageSet would reject the whole batch.
-    if (syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]) > SYNC_ITEM_QUOTA) {
-      skipped++;
+    if (syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]) > SYNC_ITEM_QUOTA ||
+        budget.used + size > budget.limit) {
+      skipped += rawList.length - i;
       break;
     }
 
+    budget.used += size;
     toSet[key] = packed;
     newIds.push(task.id);
-    seen.add(dedupeKey);
+    seen.add(taskIdentity(task));
+    seenText.add(taskIdentity(task, false));
   }
 
   if (!newIds.length) return { added: 0, skipped };
