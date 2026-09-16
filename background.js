@@ -824,6 +824,14 @@ async function importFolders(rawFolders) {
   let pending  = rawFolders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
   let rootOnly = false;
 
+  // The entire folder tree is stored under one key, and chrome.storage.sync
+  // caps a single item at 8 KB — roughly a hundred folders. A browser export
+  // can easily exceed that, so stop adding once the next folder would
+  // overflow the key instead of letting storageSet reject the whole import.
+  // Items pointing at a folder we skipped fall back to unfiled.
+  let quotaReached = false;
+  let skipped = 0;
+
   while (pending.length) {
     const deferred = [];
     let progressed = false;
@@ -848,7 +856,14 @@ async function importFolders(rawFolders) {
       clean.parentId = newParent;
 
       const match = merged.find(f => f.name === clean.name && (f.parentId || null) === newParent);
-      if (!match) merged.push(clean);
+      if (!match) {
+        if (quotaReached || syncItemSize(FOLDERS_KEY, [...merged, clean]) > SYNC_ITEM_QUOTA) {
+          quotaReached = true;
+          skipped++;
+          continue; // no idMap entry, so its items resolve to unfiled
+        }
+        merged.push(clean);
+      }
       if (typeof raw.id === 'string' && raw.id) idMap.set(raw.id, match ? match.id : clean.id);
     }
 
@@ -859,7 +874,7 @@ async function importFolders(rawFolders) {
   }
 
   if (merged.length !== existing.length) await saveFolders(merged);
-  return { idMap, added: merged.length - existing.length };
+  return { idMap, added: merged.length - existing.length, skipped };
 }
 
 // Builds a folderId translator. Imported ids go through idMap; ids that
@@ -967,7 +982,7 @@ async function importTaskList(rawList, resolveFolder) {
 // Imports any combination of the four object types in one pass. Folders are
 // merged first so items can be remapped onto their resolved ids.
 async function importData(payload) {
-  const counts = { bookmarks: 0, notes: 0, tasks: 0, folders: 0 };
+  const counts = { bookmarks: 0, notes: 0, tasks: 0, folders: 0, skippedFolders: 0 };
   const list = key => (Array.isArray(payload[key]) ? payload[key].slice(0, MAX_IMPORT_ITEMS) : []);
 
   let idMap = new Map();
@@ -976,6 +991,7 @@ async function importData(payload) {
     const res = await importFolders(folders);
     idMap = res.idMap;
     counts.folders = res.added;
+    counts.skippedFolders = res.skipped;
   }
 
   const existingFolderIds = new Set((await getFolders()).map(f => f.id));

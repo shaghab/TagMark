@@ -8,10 +8,10 @@
 
 const { createBgContext } = require('./helpers/bg-context');
 
-let context, sendMessage;
+let context, sendMessage, storage;
 
 beforeEach(() => {
-  ({ context, sendMessage } = createBgContext());
+  ({ context, sendMessage, storage } = createBgContext());
 });
 
 // ── sanitizeNote ─────────────────────────────────────────────────────────────
@@ -275,7 +275,7 @@ describe('handleMessage: import-data', () => {
   });
 
   test('handles a missing or malformed payload without throwing', async () => {
-    const empty = { bookmarks: 0, notes: 0, tasks: 0, folders: 0 };
+    const empty = { bookmarks: 0, notes: 0, tasks: 0, folders: 0, skippedFolders: 0 };
     expect((await sendMessage({ action: 'import-data' })).counts).toEqual(empty);
     expect((await sendMessage({ action: 'import-data', data: null })).counts).toEqual(empty);
     expect((await sendMessage({ action: 'import-data', data: [] })).counts).toEqual(empty);
@@ -296,6 +296,65 @@ describe('handleMessage: import-data', () => {
     const folders = await sendMessage({ action: 'get-folders' });
     expect(folders.find(f => f.name === 'A')).toBeDefined();
     expect(folders.find(f => f.name === 'B')).toBeDefined();
+  });
+});
+
+// ── Sync quota ───────────────────────────────────────────────────────────────
+
+describe('import-data: folder sync quota', () => {
+  // The whole folder tree lives under one chrome.storage.sync key, capped at
+  // 8 KB, so a large browser export must degrade rather than fail outright.
+  const manyFolders = n => Array.from({ length: n }, (_, i) => ({
+    id: `file-folder-${i}`,
+    name: `Imported Folder Number ${i}`,
+    parentId: null,
+  }));
+
+  test('truncates an oversized folder tree instead of rejecting the import', async () => {
+    const result = await sendMessage({
+      action: 'import-data',
+      data: {
+        folders: manyFolders(400),
+        bookmarks: [{ url: 'https://a.com', title: 'A', folderId: 'file-folder-0' }],
+      },
+    });
+
+    expect(result.counts.skippedFolders).toBeGreaterThan(0);
+    expect(result.counts.folders).toBeGreaterThan(0);
+    // The bookmark still imports rather than being lost with the folders.
+    expect(result.counts.bookmarks).toBe(1);
+    expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(1);
+  });
+
+  test('keeps the stored folder value inside the per-item quota', async () => {
+    await sendMessage({ action: 'import-data', data: { folders: manyFolders(400) } });
+
+    const stored = storage._data['tagmark_folders'];
+    const bytes  = 'tagmark_folders'.length + JSON.stringify(stored).length;
+    expect(bytes).toBeLessThanOrEqual(8192);
+  });
+
+  test('an item whose folder was skipped lands unfiled rather than dangling', async () => {
+    const folders = manyFolders(400);
+    const lastId  = folders[folders.length - 1].id;
+
+    await sendMessage({
+      action: 'import-data',
+      data: {
+        folders,
+        bookmarks: [{ url: 'https://a.com', title: 'A', folderId: lastId }],
+      },
+    });
+
+    const [bookmark] = await sendMessage({ action: 'get-bookmarks' });
+    const storedIds  = new Set((await sendMessage({ action: 'get-folders' })).map(f => f.id));
+    expect(bookmark.folderId === null || storedIds.has(bookmark.folderId)).toBe(true);
+  });
+
+  test('a normal-sized tree reports nothing skipped', async () => {
+    const result = await sendMessage({ action: 'import-data', data: { folders: manyFolders(3) } });
+    expect(result.counts.skippedFolders).toBe(0);
+    expect(result.counts.folders).toBe(3);
   });
 });
 

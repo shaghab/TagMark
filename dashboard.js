@@ -2156,9 +2156,14 @@
     const parts = EXPORT_TYPES
       .filter(t => counts[t] > 0)
       .map(t => plural(counts[t], t.slice(0, -1)));
-    return parts.length
+    const base = parts.length
       ? `Imported ${parts.join(', ')}.`
       : 'Nothing new — everything in that file was already here.';
+    // Folders share one sync key with an 8 KB cap, so a very large tree is
+    // truncated rather than failing the import; those items land unfiled.
+    return counts.skippedFolders
+      ? `${base} ${plural(counts.skippedFolders, 'folder')} skipped — no room left in sync storage.`
+      : base;
   }
 
   importFileInput.addEventListener('change', async e => {
@@ -2198,7 +2203,15 @@
       }
 
       const result = await chrome.runtime.sendMessage({ action: 'import-data', data });
-      showToast(summarizeImport(result && result.counts ? result.counts : {}));
+      // The background reports failures by resolving with { error }, not by
+      // rejecting, so this has to be checked explicitly — otherwise a failed
+      // import reads as "nothing new to import". A collection may already have
+      // been written before the failure, so reload either way.
+      if (!result || result.error) {
+        showToast((result && result.error) || 'Import failed.', 'error');
+      } else {
+        showToast(summarizeImport(result.counts));
+      }
       await loadAllObjects();
     } catch (err) {
       console.error('[TagMark] import failed:', err);
