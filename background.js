@@ -880,12 +880,14 @@ async function importFolders(rawFolders) {
       f.name === clean.name && (f.parentId || null) === newParent && !claimed.has(f.id));
 
     if (!match) {
-      // Stop on either ceiling: this key's own 8 KB cap (~102 folders), or the
-      // total sync quota, which the growth of this value counts against.
+      // Stop on any ceiling: this key's own 8 KB cap (~102 folders), the total
+      // sync quota, which the growth of this value counts against, or the key
+      // count — the whole tree lives in one key, so that costs at most one.
       const nextSize = syncItemSize(FOLDERS_KEY, [...merged, clean]);
       if (quotaReached ||
           nextSize > SYNC_ITEM_QUOTA ||
-          budget.used + (nextSize - baseSize) > budget.limit) {
+          budget.used + (nextSize - baseSize) > budget.limit ||
+          !claimKeys(budget, FOLDERS_KEY)) {
         quotaReached = true;
         skipped++;
         continue; // no idMap entry, so its items resolve to unfiled
@@ -950,10 +952,34 @@ function mergeImportedBookmark(existing, incoming, raw) {
 // brim and leaving no room to save anything afterwards.
 const SYNC_TOTAL_HEADROOM = 0.95;
 
+// Bytes are not the only ceiling. chrome.storage.sync also caps how many keys
+// the store may hold, and the sharded layout gives every bookmark, note and
+// task a key of its own. Many small records can therefore sit well inside both
+// byte limits and still take the store past MAX_ITEMS, which rejects the write
+// wholesale. The budget carries the live key set so a batch can stop at that
+// ceiling too, and so it knows which keys it would be creating rather than
+// overwriting.
 async function syncBudget() {
-  const quota = chrome.storage.sync.QUOTA_BYTES || 102400;
+  const quota    = chrome.storage.sync.QUOTA_BYTES || 102400;
+  const maxItems = chrome.storage.sync.MAX_ITEMS || 512;
   const used  = await new Promise(resolve => chrome.storage.sync.getBytesInUse(null, resolve));
-  return { used, limit: Math.floor(quota * SYNC_TOTAL_HEADROOM) };
+  const all   = await storageGet(null);
+  return {
+    used,
+    limit: Math.floor(quota * SYNC_TOTAL_HEADROOM),
+    keys: new Set(Object.keys(all)),
+    keyLimit: maxItems,
+  };
+}
+
+// Reserves the keys a write needs. Keys already in the store are free — they
+// are overwritten, not added. Returns false without reserving anything when
+// the write would not fit, so the caller can skip that record and carry on.
+function claimKeys(budget, ...keys) {
+  const fresh = keys.filter(k => !budget.keys.has(k));
+  if (budget.keys.size + fresh.length > budget.keyLimit) return false;
+  fresh.forEach(k => budget.keys.add(k));
+  return true;
 }
 
 // Two records can legitimately share their text while differing in tags, pin
@@ -1001,6 +1027,12 @@ async function importBookmarkList(rawList, resolveFolder) {
   const merged   = [...existing];
   const budget   = await syncBudget();
   const baseIndexSize = syncItemSize(INDEX_KEY, existing.map(e => e.id));
+  // Indexed by URL so finding a duplicate never rescans the list: the loop
+  // runs to the end of the batch even once storage is full, and a linear
+  // search per record would make that quadratic at the 10,000-item cap.
+  // First occurrence wins, matching the search this replaces.
+  const byUrl = new Map();
+  merged.forEach((e, i) => { if (!byUrl.has(e.url)) byUrl.set(e.url, i); });
   let added   = 0;
   let skipped = 0;
 
@@ -1009,7 +1041,7 @@ async function importBookmarkList(rawList, resolveFolder) {
     if (!b) continue; // skip invalid entries
     b.folderId = resolveFolder(b.folderId);
 
-    const idx = merged.findIndex(e => e.url === b.url);
+    const idx = byUrl.has(b.url) ? byUrl.get(b.url) : -1;
     if (idx >= 0) {
       // An update reuses an existing key, so it costs no new index room — but
       // merging a long title or notes onto an existing bookmark can still push
@@ -1038,18 +1070,26 @@ async function importBookmarkList(rawList, resolveFolder) {
     // title + url + notes + 50 tags can pack to ~17 KB against an 8 KB limit.
     if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
-    // bytes. The index is rewritten wholesale, so its growth counts against
-    // the total alongside the new entry — leaving it out under-reports the
-    // real cost of the write.
+    // Check every ceiling a new entry can hit: the id index's own 8 KB cap,
+    // total sync bytes, and the store's key count. The index is rewritten
+    // wholesale, so its growth counts against the total alongside the new
+    // entry — leaving it out under-reports the real cost of the write.
+    //
+    // A record that does not fit is skipped rather than ending the batch. The
+    // entries after it are not all additions: one whose URL is already stored
+    // merges into an existing key, which needs no index room and often no
+    // extra bytes, so abandoning the scan here would silently drop updates
+    // that had room to land.
     const nextIndexSize = syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]);
     if (nextIndexSize > SYNC_ITEM_QUOTA ||
-        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
-      skipped += rawList.length - i;
-      break;
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit ||
+        !claimKeys(budget, key, INDEX_KEY)) {
+      skipped++;
+      continue;
     }
 
     budget.used += size;
+    byUrl.set(b.url, merged.length);
     merged.push(b);
     added++;
   }
@@ -1090,15 +1130,20 @@ async function importNoteList(rawList, resolveFolder) {
     // rather than failing the whole import.
     if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
-    // bytes. The index is rewritten wholesale, so its growth counts against
-    // the total alongside the new entry — leaving it out under-reports the
-    // real cost of the write.
+    // Check every ceiling: the id index's own 8 KB cap, total sync bytes, and
+    // the store's key count. The index is rewritten wholesale, so its growth
+    // counts against the total alongside the new entry — leaving it out
+    // under-reports the real cost of the write.
+    //
+    // A record that does not fit is skipped rather than ending the batch, so
+    // that records already stored further down the file still match as
+    // duplicates instead of being reported as lost.
     const nextIndexSize = syncItemSize(NOTE_INDEX_KEY, [...newIds, note.id, ...ids]);
     if (nextIndexSize > SYNC_ITEM_QUOTA ||
-        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
-      skipped += rawList.length - i;
-      break;
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit ||
+        !claimKeys(budget, key, NOTE_INDEX_KEY)) {
+      skipped++;
+      continue;
     }
 
     budget.used += size;
@@ -1143,15 +1188,20 @@ async function importTaskList(rawList, resolveFolder) {
     const size   = syncItemSize(key, packed);
     if (size > SYNC_ITEM_QUOTA) { skipped++; continue; }
 
-    // Stop on either ceiling: the id index's own 8 KB cap, or total sync
-    // bytes. The index is rewritten wholesale, so its growth counts against
-    // the total alongside the new entry — leaving it out under-reports the
-    // real cost of the write.
+    // Check every ceiling: the id index's own 8 KB cap, total sync bytes, and
+    // the store's key count. The index is rewritten wholesale, so its growth
+    // counts against the total alongside the new entry — leaving it out
+    // under-reports the real cost of the write.
+    //
+    // A record that does not fit is skipped rather than ending the batch, so
+    // that records already stored further down the file still match as
+    // duplicates instead of being reported as lost.
     const nextIndexSize = syncItemSize(TASK_INDEX_KEY, [...newIds, task.id, ...ids]);
     if (nextIndexSize > SYNC_ITEM_QUOTA ||
-        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit) {
-      skipped += rawList.length - i;
-      break;
+        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit ||
+        !claimKeys(budget, key, TASK_INDEX_KEY)) {
+      skipped++;
+      continue;
     }
 
     budget.used += size;

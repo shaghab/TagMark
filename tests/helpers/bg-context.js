@@ -41,9 +41,15 @@ function createStorageMock(runtime) {
 
     QUOTA_BYTES: 102400,
     QUOTA_BYTES_PER_ITEM: 8192,
+    MAX_ITEMS: 512,
 
     get(keys, cb) {
       const result = {};
+      if (keys === null || keys === undefined) {
+        // Chrome returns the entire store for null.
+        cb({ ...data });
+        return;
+      }
       if (Array.isArray(keys)) {
         keys.forEach(k => {
           if (Object.prototype.hasOwnProperty.call(data, k)) result[k] = data[k];
@@ -59,10 +65,11 @@ function createStorageMock(runtime) {
     },
 
     // Chrome rejects the WHOLE set() when any single item exceeds
-    // QUOTA_BYTES_PER_ITEM or the store would exceed QUOTA_BYTES, signalling
-    // it through chrome.runtime.lastError rather than throwing. Enforcing that
-    // here is what makes a missing quota check fail a test instead of passing
-    // silently and only breaking in a real profile.
+    // QUOTA_BYTES_PER_ITEM, when the store would exceed QUOTA_BYTES, or when
+    // it would hold more than MAX_ITEMS keys, signalling it through
+    // chrome.runtime.lastError rather than throwing. Enforcing that here is
+    // what makes a missing quota check fail a test instead of passing silently
+    // and only breaking in a real profile.
     set(items, cb) {
       const sizeOf = (k, v) => k.length + JSON.stringify(v).length;
 
@@ -76,6 +83,10 @@ function createStorageMock(runtime) {
       const total = Object.entries(merged).reduce((sum, [k, v]) => sum + sizeOf(k, v), 0);
       if (total > this.QUOTA_BYTES) {
         return failWith('QUOTA_BYTES quota exceeded', cb);
+      }
+
+      if (Object.keys(merged).length > this.MAX_ITEMS) {
+        return failWith('MAX_ITEMS quota exceeded', cb);
       }
 
       Object.assign(data, items);

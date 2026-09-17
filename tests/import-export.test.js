@@ -942,3 +942,73 @@ describe('export → import round trip', () => {
     expect(bookmarks[0].folderId).toBe(research.id);
   });
 });
+
+describe('import-data: quota exhaustion does not abandon mergeable records', () => {
+  let storage, sendMessage;
+  beforeEach(() => { ({ storage, sendMessage } = createBgContext()); });
+
+  test('a bookmark whose URL already exists still merges after the budget runs out', async () => {
+    // A bookmark that is already saved, with no tags or notes yet.
+    await sendMessage({
+      action: 'save-bookmark',
+      bookmark: { url: 'https://known.example/page', title: 'Known' },
+    });
+
+    // Fill sync close to the total byte ceiling so the batch runs out of room.
+    const fat = Array.from({ length: 540 }, (_, i) => ({
+      title: `Note ${i}`, content: 'x'.repeat(300),
+    }));
+    await sendMessage({ action: 'import-data', data: { notes: fat } });
+
+    // New URLs first (they need index room and will hit the ceiling), then an
+    // update to a bookmark that is already stored. The update reuses its key,
+    // so it costs no new index room and its delta here is tiny.
+    const batch = [
+      ...Array.from({ length: 200 }, (_, i) => ({
+        url: `https://new.example/${i}`, title: `New ${i}`,
+      })),
+      { url: 'https://known.example/page', title: 'Known', tags: ['kept'] },
+    ];
+
+    const result = await sendMessage({ action: 'import-data', data: { bookmarks: batch } });
+    expect(result.counts.skipped.bookmarks).toBeGreaterThan(0);
+
+    const stored = await sendMessage({ action: 'get-bookmarks' });
+    const known  = stored.find(b => b.url === 'https://known.example/page');
+    expect(known.tags).toEqual(['kept']);
+  });
+});
+
+describe('import-data: sync key-count quota', () => {
+  let storage, sendMessage;
+  beforeEach(() => { ({ storage, sendMessage } = createBgContext()); });
+
+  test('an import stops at MAX_ITEMS instead of having the write rejected', async () => {
+    // Each record is its own sync key, and chrome.storage.sync holds at most
+    // 512 keys regardless of how few bytes they use.
+    const tiny = Array.from({ length: 700 }, (_, i) => ({ title: `N${i}`, content: `b${i}` }));
+
+    const result = await sendMessage({ action: 'import-data', data: { notes: tiny } });
+
+    expect(result.counts.notes).toBeGreaterThan(0);
+    expect(result.counts.skipped.notes).toBeGreaterThan(0);
+    expect(Object.keys(storage._data).length).toBeLessThanOrEqual(512);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(result.counts.notes);
+  });
+
+  test('keys already in the store count against the cap', async () => {
+    // Spread existing records across collections, then import more.
+    const notes = Array.from({ length: 200 }, (_, i) => ({ title: `N${i}`, content: `b${i}` }));
+    const tasks = Array.from({ length: 200 }, (_, i) => ({ title: `T${i}`, notes: `d${i}` }));
+    await sendMessage({ action: 'import-data', data: { notes, tasks } });
+
+    const more = Array.from({ length: 300 }, (_, i) => ({
+      url: `https://example.com/${i}`, title: `B${i}`,
+    }));
+    const result = await sendMessage({ action: 'import-data', data: { bookmarks: more } });
+
+    expect(result.counts.skipped.bookmarks).toBeGreaterThan(0);
+    expect(Object.keys(storage._data).length).toBeLessThanOrEqual(512);
+    expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(result.counts.bookmarks);
+  });
+});
