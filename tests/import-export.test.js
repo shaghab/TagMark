@@ -1012,3 +1012,79 @@ describe('import-data: sync key-count quota', () => {
     expect(await sendMessage({ action: 'get-bookmarks' })).toHaveLength(result.counts.bookmarks);
   });
 });
+
+describe('import-data: round-8 findings', () => {
+  let storage, sendMessage;
+  beforeEach(() => { ({ storage, sendMessage } = createBgContext()); });
+
+  test('a duplicate merge accounts for index growth from earlier additions', async () => {
+    // A bookmark already stored, which the last entry of the batch will update.
+    await sendMessage({
+      action: 'save-bookmark',
+      bookmark: { url: 'https://known.example/p', title: 'K' },
+    });
+    // Leave room for a few hundred additions, each growing the id index.
+    const seed = Array.from({ length: 200 }, (_, i) => ({
+      title: `N${i}`, content: 'x'.repeat(120),
+    }));
+    await sendMessage({ action: 'import-data', data: { notes: seed } });
+
+    const batch = [
+      ...Array.from({ length: 700 }, (_, i) => ({
+        url: `https://new.example/${i}`, title: `N${i}`,
+      })),
+      { url: 'https://known.example/p', title: 'K', notes: 'n'.repeat(4000) },
+    ];
+    await sendMessage({ action: 'import-data', data: { bookmarks: batch } });
+
+    // The import must stay inside the budget it enforces (95% of QUOTA_BYTES).
+    // The index growth from the additions is real storage; leaving it out of
+    // the running total let the merge spend room that was already gone.
+    const totalBytes = Object.entries(storage._data)
+      .reduce((sum, [k, v]) => sum + k.length + JSON.stringify(v).length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(Math.floor(102400 * 0.95));
+  });
+
+  test('notes differing only in updatedAt both survive a restore', async () => {
+    const at = 1700000000000;
+    const notes = [
+      { title: 'Same', content: 'body', createdAt: at, updatedAt: at },
+      { title: 'Same', content: 'body', createdAt: at, updatedAt: at + 60000 },
+    ];
+
+    const result = await sendMessage({ action: 'import-data', data: { notes } });
+    expect(result.counts.notes).toBe(2);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(2);
+  });
+
+  test('tasks differing only in updatedAt both survive a restore', async () => {
+    const at = 1700000000000;
+    const tasks = [
+      { title: 'Same', notes: 'body', createdAt: at, updatedAt: at },
+      { title: 'Same', notes: 'body', createdAt: at, updatedAt: at + 60000 },
+    ];
+
+    const result = await sendMessage({ action: 'import-data', data: { tasks } });
+    expect(result.counts.tasks).toBe(2);
+  });
+
+  test('re-importing a file that carries both timestamps stays a no-op', async () => {
+    const at = 1700000000000;
+    const notes = [
+      { title: 'Same', content: 'body', createdAt: at, updatedAt: at },
+      { title: 'Same', content: 'body', createdAt: at, updatedAt: at + 60000 },
+    ];
+    await sendMessage({ action: 'import-data', data: { notes } });
+    const again = await sendMessage({ action: 'import-data', data: { notes } });
+    expect(again.counts.notes).toBe(0);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(2);
+  });
+
+  test('re-importing a file with no updatedAt stays a no-op', async () => {
+    const notes = [{ title: 'N', content: 'body', createdAt: 1700000000000 }];
+    await sendMessage({ action: 'import-data', data: { notes } });
+    const again = await sendMessage({ action: 'import-data', data: { notes } });
+    expect(again.counts.notes).toBe(0);
+    expect(await sendMessage({ action: 'get-notes' })).toHaveLength(1);
+  });
+});

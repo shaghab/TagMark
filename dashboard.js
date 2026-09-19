@@ -1798,6 +1798,10 @@
       };
     } else {
       const res = await chrome.runtime.sendMessage({ action: 'export-data', include }) || {};
+      // handleMessage resolves with { error } rather than rejecting, so an
+      // unchecked response would coerce every collection to [] and report
+      // "nothing to export" for a backup that could not be read at all.
+      if (res.error) throw new Error(res.error);
       data = {
         bookmarks: Array.isArray(res.bookmarks) ? res.bookmarks : [],
         notes:     Array.isArray(res.notes)     ? res.notes     : [],

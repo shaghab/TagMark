@@ -983,42 +983,51 @@ function claimKeys(budget, ...keys) {
 }
 
 // Two records can legitimately share their text while differing in tags, pin
-// state, folder or creation time — TagMark lets you create exactly that — so a
+// state, folder or timestamps — TagMark lets you create exactly that — so a
 // dedupe key covers the whole record rather than just the title and body.
-// createdAt survives the import unchanged, which keeps re-importing the same
+// Timestamps survive the import unchanged, which keeps re-importing the same
 // backup idempotent while keeping genuinely distinct records distinct.
-// A record whose file carried no createdAt was given "now", which would differ on
-// every import, so such a record falls back to a text-only identity: with no
-// timestamp there is nothing to tell two same-text records apart anyway, and
-// matching on text keeps re-importing that file a no-op.
+//
+// How much of the timestamp pair counts depends on what the file supplied, at
+// STAMP_NONE / STAMP_CREATED / STAMP_BOTH. A value the file did not carry was
+// given "now", which would differ on every import, so including it would make
+// that file duplicate itself on every run. Matching on only what the file
+// actually carried keeps re-import a no-op for every shape of file, while two
+// records that differ in a timestamp the file did supply stay distinct.
 // The tuple is JSON-encoded rather than joined on a separator. Joining is
 // ambiguous for any character the fields may contain, and they may contain
 // anything: JSON permits \u0000, and the sanitizers only truncate rather than
 // strip control characters, so title "a\0b" + content "c" and title "a" +
 // content "b\0c" would collide and silently drop the second record. Tags go in
 // as an array for the same reason — normalizeTags does not remove commas.
-function noteIdentity(note, withTimestamp = true) {
-  const parts = [
-    note.title, note.content, note.tags || [],
-    Boolean(note.pinned), note.folderId || null
-  ];
-  if (withTimestamp) parts.push(note.createdAt);
+const STAMP_NONE = 0, STAMP_CREATED = 1, STAMP_BOTH = 2;
+
+function withStamps(parts, record, level) {
+  if (level >= STAMP_CREATED) parts.push(record.createdAt);
+  if (level >= STAMP_BOTH)    parts.push(record.updatedAt);
   return JSON.stringify(parts);
 }
 
-function taskIdentity(task, withTimestamp = true) {
-  const parts = [
+function noteIdentity(note, level = STAMP_BOTH) {
+  return withStamps([
+    note.title, note.content, note.tags || [],
+    Boolean(note.pinned), note.folderId || null
+  ], note, level);
+}
+
+function taskIdentity(task, level = STAMP_BOTH) {
+  return withStamps([
     task.title, task.notes || '', task.tags || [],
     Boolean(task.pinned), task.folderId || null,
     task.gtdStatus || null, task.urgency || null, task.importance || null
-  ];
-  if (withTimestamp) parts.push(task.createdAt);
-  return JSON.stringify(parts);
+  ], task, level);
 }
 
-// True when the file actually supplied a usable creation time.
-function hasTimestamp(raw) {
-  return !!raw && typeof raw.createdAt === 'number' && raw.createdAt > 0;
+// How many of the two timestamps the file actually supplied for this record.
+function stampLevel(raw) {
+  const has = key => !!raw && typeof raw[key] === 'number' && raw[key] > 0;
+  if (!has('createdAt')) return STAMP_NONE;
+  return has('updatedAt') ? STAMP_BOTH : STAMP_CREATED;
 }
 
 // Merges imported bookmarks, updating in place when the URL already exists.
@@ -1026,7 +1035,9 @@ async function importBookmarkList(rawList, resolveFolder) {
   const existing = await getBookmarks();
   const merged   = [...existing];
   const budget   = await syncBudget();
-  const baseIndexSize = syncItemSize(INDEX_KEY, existing.map(e => e.id));
+  // Grows as entries are added; the delta is charged against the budget so the
+  // merge path further down sees the true remaining room.
+  let indexSize = syncItemSize(INDEX_KEY, existing.map(e => e.id));
   // Indexed by URL so finding a duplicate never rescans the list: the loop
   // runs to the end of the batch even once storage is full, and a linear
   // search per record would make that quadratic at the 10,000-item cap.
@@ -1082,13 +1093,17 @@ async function importBookmarkList(rawList, resolveFolder) {
     // that had room to land.
     const nextIndexSize = syncItemSize(INDEX_KEY, [...merged.map(e => e.id), b.id]);
     if (nextIndexSize > SYNC_ITEM_QUOTA ||
-        budget.used + size + (nextIndexSize - baseIndexSize) > budget.limit ||
+        budget.used + size + (nextIndexSize - indexSize) > budget.limit ||
         !claimKeys(budget, key, INDEX_KEY)) {
       skipped++;
       continue;
     }
 
-    budget.used += size;
+    // Charge the index growth to the running total, not just to this check:
+    // the duplicate-URL branch spends the same budget and would otherwise see
+    // every id added so far as free.
+    budget.used += size + (nextIndexSize - indexSize);
+    indexSize = nextIndexSize;
     byUrl.set(b.url, merged.length);
     merged.push(b);
     added++;
@@ -1100,10 +1115,10 @@ async function importBookmarkList(rawList, resolveFolder) {
 
 async function importNoteList(rawList, resolveFolder) {
   const existing = await getNotes();
-  // Both identities are tracked so a timestamped record and a timestamp-less
-  // one can each be matched against what is already stored.
-  const seen     = new Set(existing.map(r => noteIdentity(r)));
-  const seenText = new Set(existing.map(r => noteIdentity(r, false)));
+  // A stored record always has both timestamps, so it is registered at every
+  // level; an incoming record is matched at the level its file supplied.
+  const seen = [STAMP_NONE, STAMP_CREATED, STAMP_BOTH].map(
+    level => new Set(existing.map(r => noteIdentity(r, level))));
   const result   = await storageGet([NOTE_INDEX_KEY]);
   const ids      = Array.isArray(result[NOTE_INDEX_KEY]) ? result[NOTE_INDEX_KEY] : [];
   const budget   = await syncBudget();
@@ -1119,9 +1134,8 @@ async function importNoteList(rawList, resolveFolder) {
     // Resolve the folder first so the identity matches what is already stored.
     note.folderId = resolveFolder(note.folderId);
 
-    const dated    = hasTimestamp(rawList[i]);
-    const identity = noteIdentity(note, dated);
-    if (dated ? seen.has(identity) : seenText.has(identity)) continue;
+    const level = stampLevel(rawList[i]);
+    if (seen[level].has(noteIdentity(note, level))) continue;
 
     const key    = NOTE_PREFIX + note.id;
     const packed = compactBookmark(note);
@@ -1149,8 +1163,7 @@ async function importNoteList(rawList, resolveFolder) {
     budget.used += size;
     toSet[key] = packed;
     newIds.push(note.id);
-    seen.add(noteIdentity(note));
-    seenText.add(noteIdentity(note, false));
+    seen.forEach((set, level) => set.add(noteIdentity(note, level)));
   }
 
   if (!newIds.length) return { added: 0, skipped };
@@ -1161,10 +1174,10 @@ async function importNoteList(rawList, resolveFolder) {
 
 async function importTaskList(rawList, resolveFolder) {
   const existing = await getTasks();
-  // Both identities are tracked so a timestamped record and a timestamp-less
-  // one can each be matched against what is already stored.
-  const seen     = new Set(existing.map(r => taskIdentity(r)));
-  const seenText = new Set(existing.map(r => taskIdentity(r, false)));
+  // A stored record always has both timestamps, so it is registered at every
+  // level; an incoming record is matched at the level its file supplied.
+  const seen = [STAMP_NONE, STAMP_CREATED, STAMP_BOTH].map(
+    level => new Set(existing.map(r => taskIdentity(r, level))));
   const result   = await storageGet([TASK_INDEX_KEY]);
   const ids      = Array.isArray(result[TASK_INDEX_KEY]) ? result[TASK_INDEX_KEY] : [];
   const budget   = await syncBudget();
@@ -1179,9 +1192,8 @@ async function importTaskList(rawList, resolveFolder) {
     if (!task) continue;
     task.folderId = resolveFolder(task.folderId);
 
-    const dated    = hasTimestamp(rawList[i]);
-    const identity = taskIdentity(task, dated);
-    if (dated ? seen.has(identity) : seenText.has(identity)) continue;
+    const level = stampLevel(rawList[i]);
+    if (seen[level].has(taskIdentity(task, level))) continue;
 
     const key    = TASK_PREFIX + task.id;
     const packed = compactBookmark(task);
@@ -1207,8 +1219,7 @@ async function importTaskList(rawList, resolveFolder) {
     budget.used += size;
     toSet[key] = packed;
     newIds.push(task.id);
-    seen.add(taskIdentity(task));
-    seenText.add(taskIdentity(task, false));
+    seen.forEach((set, level) => set.add(taskIdentity(task, level)));
   }
 
   if (!newIds.length) return { added: 0, skipped };
