@@ -25,15 +25,31 @@ const BG_PATH = path.resolve(__dirname, '../../background.js');
  * Returns a minimal chrome.storage.sync mock that stores data in memory.
  * `._data` is exposed for direct inspection inside tests.
  */
-function createStorageMock() {
+function createStorageMock(runtime) {
   const data = {};
+
+  // Mirrors Chrome: the callback still runs, with runtime.lastError set for
+  // the duration of that callback and cleared afterwards.
+  function failWith(message, cb) {
+    if (runtime) runtime.lastError = { message };
+    if (cb) cb();
+    if (runtime) delete runtime.lastError;
+  }
+
   return {
     _data: data,
 
     QUOTA_BYTES: 102400,
+    QUOTA_BYTES_PER_ITEM: 8192,
+    MAX_ITEMS: 512,
 
     get(keys, cb) {
       const result = {};
+      if (keys === null || keys === undefined) {
+        // Chrome returns the entire store for null.
+        cb({ ...data });
+        return;
+      }
       if (Array.isArray(keys)) {
         keys.forEach(k => {
           if (Object.prototype.hasOwnProperty.call(data, k)) result[k] = data[k];
@@ -48,7 +64,31 @@ function createStorageMock() {
       cb(result);
     },
 
+    // Chrome rejects the WHOLE set() when any single item exceeds
+    // QUOTA_BYTES_PER_ITEM, when the store would exceed QUOTA_BYTES, or when
+    // it would hold more than MAX_ITEMS keys, signalling it through
+    // chrome.runtime.lastError rather than throwing. Enforcing that here is
+    // what makes a missing quota check fail a test instead of passing silently
+    // and only breaking in a real profile.
     set(items, cb) {
+      const sizeOf = (k, v) => k.length + JSON.stringify(v).length;
+
+      for (const [k, v] of Object.entries(items)) {
+        if (sizeOf(k, v) > this.QUOTA_BYTES_PER_ITEM) {
+          return failWith(`QUOTA_BYTES_PER_ITEM quota exceeded for key "${k}"`, cb);
+        }
+      }
+
+      const merged = { ...data, ...items };
+      const total = Object.entries(merged).reduce((sum, [k, v]) => sum + sizeOf(k, v), 0);
+      if (total > this.QUOTA_BYTES) {
+        return failWith('QUOTA_BYTES quota exceeded', cb);
+      }
+
+      if (Object.keys(merged).length > this.MAX_ITEMS) {
+        return failWith('MAX_ITEMS quota exceeded', cb);
+      }
+
       Object.assign(data, items);
       if (cb) cb();
     },
@@ -75,6 +115,8 @@ function createStorageMock() {
 /**
  * Loads background.js into an isolated vm context with a mocked Chrome API.
  *
+ * options.seed – storage entries written before background.js runs.
+ *
  * Returns:
  *   context        – the vm sandbox (all top-level functions are properties)
  *   storage        – in-memory storage mock (inspect `._data` for raw values)
@@ -82,29 +124,43 @@ function createStorageMock() {
  *   chrome         – the chrome API mock object
  *   msgListeners   – the raw array of registered onMessage listeners
  */
-function createBgContext() {
-  const storage      = createStorageMock();
+function createBgContext(options = {}) {
   const msgListeners = [];
 
+  // chrome.runtime is built first so the storage mock can set lastError on it.
+  const runtime = {
+    id: 'tagmark-test-ext-id',
+    onInstalled: { addListener: () => {} },
+    onMessage:   { addListener: fn => msgListeners.push(fn) },
+    getURL:      p => `chrome-extension://tagmark-test-ext-id/${p}`,
+  };
+
+  const storage = createStorageMock(runtime);
+
+  // background.js reads storage as soon as it loads (it refreshes the badge),
+  // so anything a test needs to be already present — legacy data for the
+  // migration path, for instance — has to be seeded before that happens.
+  if (options.seed) Object.assign(storage._data, options.seed);
+
   const chrome = {
-    runtime: {
-      id: 'tagmark-test-ext-id',
-      onInstalled: { addListener: () => {} },
-      onMessage:   { addListener: fn => msgListeners.push(fn) },
-      getURL:      p => `chrome-extension://tagmark-test-ext-id/${p}`,
-    },
+    runtime,
     storage: { sync: storage },
     contextMenus: {
       create:    () => {},
       onClicked: { addListener: () => {} },
     },
     tabs: {
-      query:       (_, cb) => cb([]),
+      // background.js calls this both callback-style and promise-style.
+      query:       (_, cb) => (typeof cb === 'function' ? cb([]) : Promise.resolve([])),
       sendMessage: () => Promise.resolve(),
+      get:         () => Promise.resolve({}),
+      onActivated: { addListener: () => {} },
+      onUpdated:   { addListener: () => {} },
     },
     action: {
       setBadgeText:            () => {},
       setBadgeBackgroundColor: () => {},
+      setIcon:                 () => {},
     },
   };
 
@@ -115,6 +171,8 @@ function createBgContext() {
     chrome,
     // WHATWG URL (used by isValidUrl, sanitizeFavIconUrl, formatUrl)
     URL,
+    // Web Crypto (used by generateId)
+    crypto,
     // Core language built-ins used by background.js
     Date,
     Math,

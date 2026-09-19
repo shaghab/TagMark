@@ -114,7 +114,7 @@
           <polyline points="17,8 12,3 7,8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
           <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
         </svg>
-        Import JSON
+        Import
       </button>
       <button class="icon-text-btn" id="exportBtn">
         <svg class="icon" viewBox="0 0 24 24" fill="none">
@@ -122,7 +122,7 @@
           <polyline points="17,8 12,13 7,8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
           <line x1="12" y1="3" x2="12" y2="13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
         </svg>
-        Export JSON
+        Export…
       </button>
       <button class="icon-text-btn theme-btn" id="themeToggle">
         <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none">
@@ -488,8 +488,88 @@
     </div>
   </div>
 
+  <!-- Export modal -->
+  <div class="modal-overlay" id="exportModalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+    <div class="modal export-modal" id="exportModal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="exportModalTitle">Export</h2>
+        <button class="icon-btn" id="closeExportModal" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="exportForm" autocomplete="off">
+
+        <fieldset class="export-group">
+          <legend class="form-label">Include</legend>
+          <label class="export-option">
+            <input type="checkbox" id="expIncBookmarks" checked>
+            <span class="export-option-label">Bookmarks</span>
+            <span class="export-option-count" id="expCountBookmarks"></span>
+          </label>
+          <label class="export-option">
+            <input type="checkbox" id="expIncNotes" checked>
+            <span class="export-option-label">Notes</span>
+            <span class="export-option-count" id="expCountNotes"></span>
+          </label>
+          <label class="export-option">
+            <input type="checkbox" id="expIncTasks" checked>
+            <span class="export-option-label">Tasks</span>
+            <span class="export-option-count" id="expCountTasks"></span>
+          </label>
+          <label class="export-option">
+            <input type="checkbox" id="expIncFolders" checked>
+            <span class="export-option-label">Folders</span>
+            <span class="export-option-count" id="expCountFolders"></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="export-group">
+          <legend class="form-label">Scope</legend>
+          <label class="export-option">
+            <input type="radio" name="expScope" value="all" checked>
+            <span class="export-option-label">Everything</span>
+          </label>
+          <label class="export-option">
+            <input type="radio" name="expScope" value="view">
+            <span class="export-option-label">What I'm looking at now</span>
+            <span class="export-option-hint" id="expScopeHint"></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="export-group">
+          <legend class="form-label">Format</legend>
+          <label class="export-option">
+            <input type="radio" name="expFormat" value="json" checked>
+            <span class="export-option-label">JSON</span>
+            <span class="export-option-hint">Full backup — import it back into TagMark</span>
+          </label>
+          <label class="export-option">
+            <input type="radio" name="expFormat" value="html">
+            <span class="export-option-label">HTML</span>
+            <span class="export-option-hint">Bookmarks only — opens in any browser</span>
+          </label>
+          <label class="export-option">
+            <input type="radio" name="expFormat" value="md">
+            <span class="export-option-label">Markdown</span>
+            <span class="export-option-hint">For reading and sharing</span>
+          </label>
+        </fieldset>
+
+        <p class="export-summary" id="exportSummary"></p>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelExport">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="exportSubmitBtn">Export</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Hidden file input for import -->
-  <input type="file" id="importFileInput" accept=".json" style="display:none">
+  <input type="file" id="importFileInput" accept=".json,.html,.htm" style="display:none">
 
   <script src="shared.js"></script>
   <script src="dashboard.js"></script>

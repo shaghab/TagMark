@@ -1940,3 +1940,81 @@ body {
   gap: 4px;
   font-size: 12px;
 }
+
+/* ── Export modal ──────────────────────────────────────────────────────────── */
+
+.export-modal {
+  max-width: 460px;
+}
+
+.export-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.export-group legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.export-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 1px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.export-option:hover {
+  background: var(--accent-light);
+}
+
+.export-option input {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+
+.export-option-label {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.export-option-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* Hints sit under the label, spanning the label + count columns. */
+.export-option-hint {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.export-summary {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent-light);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

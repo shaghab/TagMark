@@ -924,6 +924,7 @@
       else if ($('folderModalOverlay').style.display !== 'none') closeFolderModal();
       else if ($('noteModalOverlay').style.display !== 'none') closeNoteModal();
       else if ($('taskModalOverlay').style.display !== 'none') closeTaskModal();
+      else if ($('exportModalOverlay').style.display !== 'none') closeExportModal();
     }
   });
 
@@ -1695,27 +1696,527 @@
 
   // ── Import / Export ────────────────────────────────────────────────────────
 
-  exportBtn.addEventListener('click', async () => {
+  const EXPORT_TYPES = ['bookmarks', 'notes', 'tasks', 'folders'];
+
+  const exportOverlay = $('exportModalOverlay');
+  const exportSummary = $('exportSummary');
+  const exportSubmit  = $('exportSubmitBtn');
+
+  const expInc = {
+    bookmarks: $('expIncBookmarks'),
+    notes:     $('expIncNotes'),
+    tasks:     $('expIncTasks'),
+    folders:   $('expIncFolders')
+  };
+  const expCountEl = {
+    bookmarks: $('expCountBookmarks'),
+    notes:     $('expCountNotes'),
+    tasks:     $('expCountTasks'),
+    folders:   $('expCountFolders')
+  };
+
+  function plural(n, word) {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
+
+  function checkedValue(name, fallback) {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? el.value : fallback;
+  }
+
+  const exportScope  = () => checkedValue('expScope', 'all');
+  const exportFormat = () => checkedValue('expFormat', 'json');
+
+  // Drops the dashboard-only objectType marker before anything reaches a file.
+  function stripInternal(item) {
+    const copy = { ...item };
+    delete copy.objectType;
+    return copy;
+  }
+
+  // The items the active filters are currently showing, split by type. The grid
+  // renders one object type at a time unless "All" is selected, so this is an
+  // honest reflection of what is on screen.
+  function currentViewItems() {
+    const visible = getFilteredSorted();
+    return {
+      bookmarks: visible.filter(i => i.objectType === 'bookmark'),
+      notes:     visible.filter(i => i.objectType === 'note'),
+      tasks:     visible.filter(i => i.objectType === 'task')
+    };
+  }
+
+  // Folders referenced by the given items, plus every ancestor, so an exported
+  // subtree keeps its parents and can be rebuilt on import.
+  function foldersForItems(items) {
+    const byId = new Map(allFolders.map(f => [f.id, f]));
+    const keep = new Set();
+    items.forEach(item => {
+      let id = item.folderId;
+      while (id && byId.has(id) && !keep.has(id)) {
+        keep.add(id);
+        id = byId.get(id).parentId;
+      }
+    });
+    return allFolders.filter(f => keep.has(f.id));
+  }
+
+  // In-memory counts, used for the modal's live preview.
+  function previewCounts() {
+    if (exportScope() === 'view') {
+      const view = currentViewItems();
+      const items = [...view.bookmarks, ...view.notes, ...view.tasks];
+      return {
+        bookmarks: view.bookmarks.length,
+        notes:     view.notes.length,
+        tasks:     view.tasks.length,
+        folders:   foldersForItems(items).length
+      };
+    }
+    return {
+      bookmarks: allBookmarks.length,
+      notes:     allNotes.length,
+      tasks:     allTasks.length,
+      folders:   allFolders.length
+    };
+  }
+
+  // Assembles the data to write out. "Everything" re-reads through the
+  // background so the file reflects committed storage rather than whatever the
+  // grid happens to be holding.
+  async function collectExportData() {
+    const include = EXPORT_TYPES.filter(t => expInc[t].checked);
+    let data;
+
+    if (exportScope() === 'view') {
+      const view = currentViewItems();
+      data = {
+        bookmarks: view.bookmarks,
+        notes:     view.notes,
+        tasks:     view.tasks,
+        folders:   foldersForItems([...view.bookmarks, ...view.notes, ...view.tasks])
+      };
+    } else {
+      const res = await chrome.runtime.sendMessage({ action: 'export-data', include }) || {};
+      // handleMessage resolves with { error } rather than rejecting, so an
+      // unchecked response would coerce every collection to [] and report
+      // "nothing to export" for a backup that could not be read at all.
+      if (res.error) throw new Error(res.error);
+      data = {
+        bookmarks: Array.isArray(res.bookmarks) ? res.bookmarks : [],
+        notes:     Array.isArray(res.notes)     ? res.notes     : [],
+        tasks:     Array.isArray(res.tasks)     ? res.tasks     : [],
+        folders:   Array.isArray(res.folders)   ? res.folders   : []
+      };
+    }
+
+    EXPORT_TYPES.forEach(t => {
+      data[t] = include.includes(t) ? data[t].map(stripInternal) : [];
+    });
+    return data;
+  }
+
+  // ── Export formats ─────────────────────────────────────────────────────────
+
+  function buildJson(data) {
+    return JSON.stringify({
+      format:     'tagmark-export',
+      version:    2,
+      exportedAt: new Date().toISOString(),
+      counts: {
+        bookmarks: data.bookmarks.length,
+        notes:     data.notes.length,
+        tasks:     data.tasks.length,
+        folders:   data.folders.length
+      },
+      bookmarks: data.bookmarks,
+      notes:     data.notes,
+      tasks:     data.tasks,
+      folders:   data.folders
+    }, null, 2);
+  }
+
+  // Netscape bookmark files store timestamps as whole seconds.
+  function netscapeDate(ms) {
+    return String(Math.floor((typeof ms === 'number' && ms > 0 ? ms : Date.now()) / 1000));
+  }
+
+  // Netscape bookmark file — the format Chrome, Firefox and Safari import.
+  // It has no representation for notes or tasks, so only bookmarks (nested in
+  // their folders) are written.
+  function buildNetscapeHtml(data) {
+    const folderIds = new Set(data.folders.map(f => f.id));
+    const children  = new Map(); // parent id ('' = root) → folders
+
+    data.folders.forEach(f => {
+      const key = folderIds.has(f.parentId) ? f.parentId : '';
+      if (!children.has(key)) children.set(key, []);
+      children.get(key).push(f);
+    });
+
+    const out = [];
+    const pad = depth => '    '.repeat(depth);
+
+    const writeBookmark = (b, depth) => {
+      const attrs = [
+        `HREF="${escAttr(b.url || '')}"`,
+        `ADD_DATE="${netscapeDate(b.createdAt)}"`,
+        `LAST_MODIFIED="${netscapeDate(b.updatedAt)}"`
+      ];
+      // TAGS is the de-facto convention that Firefox and most importers read.
+      if ((b.tags || []).length) attrs.push(`TAGS="${escAttr(b.tags.join(','))}"`);
+      if (b.favIconUrl)          attrs.push(`ICON="${escAttr(b.favIconUrl)}"`);
+      out.push(`${pad(depth)}<DT><A ${attrs.join(' ')}>${escHtml(b.title || b.url || '')}</A>`);
+      if (b.notes) out.push(`${pad(depth)}<DD>${escHtml(b.notes)}`);
+    };
+
+    const writeLevel = (parentKey, depth) => {
+      (children.get(parentKey) || []).forEach(folder => {
+        out.push(`${pad(depth)}<DT><H3 ADD_DATE="${netscapeDate(folder.createdAt)}">${escHtml(folder.name)}</H3>`);
+        out.push(`${pad(depth)}<DL><p>`);
+        writeLevel(folder.id, depth + 1);
+        data.bookmarks.filter(b => b.folderId === folder.id).forEach(b => writeBookmark(b, depth + 1));
+        out.push(`${pad(depth)}</DL><p>`);
+      });
+    };
+
+    out.push('<!DOCTYPE NETSCAPE-Bookmark-file-1>');
+    out.push('<!-- This is an automatically generated file. It will be read and overwritten. -->');
+    out.push('<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">');
+    out.push('<TITLE>Bookmarks</TITLE>');
+    out.push('<H1>Bookmarks</H1>');
+    out.push('<DL><p>');
+    writeLevel('', 1);
+    // Bookmarks with no folder — or whose folder was not exported — sit at root.
+    data.bookmarks.filter(b => !folderIds.has(b.folderId)).forEach(b => writeBookmark(b, 1));
+    out.push('</DL><p>');
+
+    return out.join('\n') + '\n';
+  }
+
+  function mdTags(tags) {
+    return (tags || []).length ? ' — ' + tags.map(t => '`' + t + '`').join(' ') : '';
+  }
+
+  function mdQuote(text) {
+    return String(text).split('\n').map(line => `  > ${line}`).join('\n');
+  }
+
+  // Human-readable export. Folders show up as grouping headings when they are
+  // included; otherwise bookmarks are listed flat.
+  function buildMarkdown(data) {
+    const lines = ['# TagMark Export', '', `_Exported ${new Date().toISOString().slice(0, 10)}_`, ''];
+
+    if (data.bookmarks.length) {
+      lines.push(`## Bookmarks (${data.bookmarks.length})`, '');
+
+      if (data.folders.length) {
+        const nameFor = id => {
+          const folder = data.folders.find(f => f.id === id);
+          return folder ? folder.name : 'Unfiled';
+        };
+        const groups = new Map();
+        data.bookmarks.forEach(b => {
+          const key = nameFor(b.folderId);
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(b);
+        });
+        [...groups.keys()].sort().forEach(name => {
+          lines.push(`### ${name}`, '');
+          groups.get(name).forEach(b => {
+            lines.push(`- [${b.title || b.url}](${b.url})${mdTags(b.tags)}`);
+            if (b.notes) lines.push(mdQuote(b.notes));
+          });
+          lines.push('');
+        });
+      } else {
+        data.bookmarks.forEach(b => {
+          lines.push(`- [${b.title || b.url}](${b.url})${mdTags(b.tags)}`);
+          if (b.notes) lines.push(mdQuote(b.notes));
+        });
+        lines.push('');
+      }
+    }
+
+    if (data.notes.length) {
+      lines.push(`## Notes (${data.notes.length})`, '');
+      data.notes.forEach(n => {
+        lines.push(`### ${n.title || 'Untitled'}${mdTags(n.tags)}`, '');
+        if (n.content) lines.push(n.content, '');
+      });
+    }
+
+    if (data.tasks.length) {
+      lines.push(`## Tasks (${data.tasks.length})`, '');
+      data.tasks.forEach(t => {
+        const done   = CLOSED_GTD_STATUSES.includes(t.gtdStatus);
+        const status = t.gtdStatus ? ` _(${statusLabel(t.gtdStatus)})_` : '';
+        lines.push(`- [${done ? 'x' : ' '}] ${t.title || 'Untitled'}${status}${mdTags(t.tags)}`);
+        if (t.notes) lines.push(mdQuote(t.notes));
+      });
+      lines.push('');
+    }
+
+    // Grouping headings alone would lose empty folders and the nesting, and
+    // a folders-only export would be nothing but a header — so write the tree.
+    if (data.folders.length) {
+      lines.push(`## Folders (${data.folders.length})`, '');
+      const ids      = new Set(data.folders.map(f => f.id));
+      const children = new Map();
+      data.folders.forEach(f => {
+        const key = ids.has(f.parentId) ? f.parentId : '';
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(f);
+      });
+      const walk = (parentKey, depth) => {
+        (children.get(parentKey) || []).forEach(folder => {
+          lines.push(`${'  '.repeat(depth)}- ${folder.name}`);
+          walk(folder.id, depth + 1);
+        });
+      };
+      walk('', 0);
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  // `carries` lists the types a format can actually represent. Netscape HTML
+  // has no notion of notes or tasks, so selecting it drops them — the modal
+  // says so up front and the success toast only reports what was written.
+  const EXPORT_FORMATS = {
+    json: { ext: 'json', mime: 'application/json', build: buildJson,
+            carries: ['bookmarks', 'notes', 'tasks', 'folders'] },
+    html: { ext: 'html', mime: 'text/html',        build: buildNetscapeHtml,
+            carries: ['bookmarks', 'folders'] },
+    md:   { ext: 'md',   mime: 'text/markdown',    build: buildMarkdown,
+            carries: ['bookmarks', 'notes', 'tasks', 'folders'] }
+  };
+
+  function downloadFile(filename, mime, text) {
+    const blob = new Blob([text], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    // Revoking straight away can cancel the download before it starts, so give
+    // the click a moment to take effect.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // ── Export modal ───────────────────────────────────────────────────────────
+
+  function refreshExportPreview() {
+    // The Trash view renders deleted objects, which are not part of any
+    // collection the export reads — "what I'm looking at now" would quietly
+    // export the active data instead, so it is unavailable there.
+    const viewRadio = document.querySelector('input[name="expScope"][value="view"]');
+    viewRadio.disabled = viewingTrash;
+    if (viewingTrash && viewRadio.checked) {
+      document.querySelector('input[name="expScope"][value="all"]').checked = true;
+    }
+
+    const counts  = previewCounts();
+    const format  = exportFormat();
+    const include = EXPORT_TYPES.filter(t => expInc[t].checked);
+
+    EXPORT_TYPES.forEach(t => { expCountEl[t].textContent = counts[t]; });
+
+    $('expScopeHint').textContent = viewingTrash
+      ? 'not available while viewing Trash'
+      : (activeObjectType === 'all' ? '' : `currently showing ${activeObjectType}s`);
+
+    const spec      = EXPORT_FORMATS[format];
+    const effective = include.filter(t => spec.carries.includes(t));
+    const total     = effective.reduce((sum, t) => sum + counts[t], 0);
+
+    const parts = effective
+      .filter(t => counts[t] > 0)
+      .map(t => plural(counts[t], t.slice(0, -1)));
+
+    let text = parts.length ? parts.join(', ') : 'Nothing selected';
+    text += ` → tagmark-export-${new Date().toISOString().slice(0, 10)}.${spec.ext}`;
+
+    const dropped = include.filter(t => !spec.carries.includes(t) && counts[t] > 0);
+    if (dropped.length) {
+      text += `\nHTML cannot carry ${dropped.join(' or ')} — they will be left out.`;
+    }
+
+    exportSummary.textContent = text;
+    exportSubmit.disabled = total === 0;
+  }
+
+  function openExportModal() {
+    refreshExportPreview();
+    exportOverlay.style.display = '';
+  }
+
+  function closeExportModal() {
+    exportOverlay.style.display = 'none';
+  }
+
+  exportBtn.addEventListener('click', openExportModal);
+  $('closeExportModal').addEventListener('click', closeExportModal);
+  $('cancelExport').addEventListener('click', closeExportModal);
+  exportOverlay.addEventListener('click', e => {
+    if (e.target === exportOverlay) closeExportModal();
+  });
+  $('exportForm').addEventListener('change', refreshExportPreview);
+
+  $('exportForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const format = EXPORT_FORMATS[exportFormat()] || EXPORT_FORMATS.json;
     try {
-      const bookmarks = await chrome.runtime.sendMessage({ action: 'export-bookmarks' });
-      const json = JSON.stringify(bookmarks, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `tagmark-export-${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast(`Exported ${bookmarks.length} bookmarks.`);
-    } catch {
-      showToast('Export failed.');
+      const collected = await collectExportData();
+      // Anything the format cannot represent is dropped here, so the file and
+      // the toast agree on what was actually exported.
+      const data = {};
+      EXPORT_TYPES.forEach(t => { data[t] = format.carries.includes(t) ? collected[t] : []; });
+
+      const total = EXPORT_TYPES.reduce((sum, t) => sum + data[t].length, 0);
+      if (!total) { showToast('Nothing to export with those options.', 'error'); return; }
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadFile(`tagmark-export-${stamp}.${format.ext}`, format.mime, format.build(data));
+
+      const parts = EXPORT_TYPES
+        .filter(t => data[t].length)
+        .map(t => plural(data[t].length, t.slice(0, -1)));
+      showToast(`Exported ${parts.join(', ')}.`);
+      closeExportModal();
+    } catch (err) {
+      console.error('[TagMark] export failed:', err);
+      showToast('Export failed.', 'error');
     }
   });
+
+  // ── Import ─────────────────────────────────────────────────────────────────
 
   importBtn.addEventListener('click', () => importFileInput.click());
 
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
-  const MAX_IMPORT_COUNT = 10000;            // max bookmark entries per import (CWE-400)
+  const MAX_IMPORT_COUNT = 10000;            // max entries per type (CWE-400)
+
+  const emptyImport = () => ({ bookmarks: [], notes: [], tasks: [], folders: [] });
+
+  // Accepts a v2 export object, the older { bookmarks: [...] } shape, and a
+  // bare bookmarks array. Anything else is rejected before it reaches storage.
+  function parseTagmarkJson(text) {
+    const raw = JSON.parse(text);
+    if (Array.isArray(raw)) return { ...emptyImport(), bookmarks: raw };
+    if (!raw || typeof raw !== 'object') return null;
+
+    const data = emptyImport();
+    EXPORT_TYPES.forEach(t => { if (Array.isArray(raw[t])) data[t] = raw[t]; });
+    return data;
+  }
+
+  // Netscape bookmark files nest the child <DL> inside the <DT> in some
+  // exports and place it as a following sibling in others. Accept both.
+  function nestedList(dt) {
+    const inside = dt.querySelector(':scope > dl');
+    if (inside) return inside;
+    let el = dt.nextElementSibling;
+    while (el && el.tagName !== 'DT' && el.tagName !== 'DL') el = el.nextElementSibling;
+    return el && el.tagName === 'DL' ? el : null;
+  }
+
+  // The <DD> description that carries a bookmark's note, wherever the parser
+  // ended up putting it.
+  function descriptionFor(dt) {
+    const inside = dt.querySelector(':scope > dd');
+    if (inside) return inside.textContent.trim();
+    const next = dt.nextElementSibling;
+    return next && next.tagName === 'DD' ? next.textContent.trim() : '';
+  }
+
+  // Parses a Netscape bookmark file — what Chrome, Firefox and Safari export.
+  // DOMParser does not run scripts and the resulting tree is never attached to
+  // the live document, so untrusted markup stays inert here.
+  function parseNetscapeHtml(text) {
+    const doc  = new DOMParser().parseFromString(text, 'text/html');
+    const root = doc.querySelector('dl');
+    if (!root) return null;
+
+    const data = emptyImport();
+    let folderSeq = 0;
+
+    // Netscape timestamps are whole seconds; anything unparseable is left off
+    // so the background falls back to "now".
+    const toMs = value => {
+      const n = parseInt(value, 10);
+      return Number.isFinite(n) && n > 0 ? n * 1000 : undefined;
+    };
+
+    // Walk iteratively with an explicit stack. Recursion with a depth limit
+    // would silently discard everything below it — a browser export nested
+    // deeper than the limit would import as a success with a subtree missing —
+    // and recursing without one risks blowing the stack. `visited` guards
+    // against a malformed file whose lists reference each other in a loop.
+    const visited = new Set();
+    const stack   = [{ dl: root, parentId: null }];
+
+    while (stack.length) {
+      const { dl, parentId } = stack.pop();
+      if (visited.has(dl)) continue;
+      visited.add(dl);
+
+      const descend = [];
+
+      Array.from(dl.children).filter(el => el.tagName === 'DT').forEach(dt => {
+        const h3 = dt.querySelector(':scope > h3');
+        const a  = dt.querySelector(':scope > a');
+
+        if (h3) {
+          const folder = {
+            id:        `imported-folder-${++folderSeq}`,
+            name:      h3.textContent.trim(),
+            parentId,
+            createdAt: toMs(h3.getAttribute('add_date'))
+          };
+          if (folder.name) data.folders.push(folder);
+          const nested = nestedList(dt);
+          if (nested) descend.push({ dl: nested, parentId: folder.name ? folder.id : parentId });
+        } else if (a && a.getAttribute('href')) {
+          data.bookmarks.push({
+            url:        a.getAttribute('href'),
+            title:      a.textContent.trim(),
+            favIconUrl: a.getAttribute('icon') || '',
+            tags:       (a.getAttribute('tags') || '').split(',').map(t => t.trim()).filter(Boolean),
+            notes:      descriptionFor(dt),
+            folderId:   parentId,
+            createdAt:  toMs(a.getAttribute('add_date')),
+            updatedAt:  toMs(a.getAttribute('last_modified'))
+          });
+        }
+      });
+
+      // Reverse so sibling subtrees are visited in document order.
+      for (let i = descend.length - 1; i >= 0; i--) stack.push(descend[i]);
+    }
+
+    return data;
+  }
+
+  function summarizeImport(counts) {
+    const parts = EXPORT_TYPES
+      .filter(t => counts[t] > 0)
+      .map(t => plural(counts[t], t.slice(0, -1)));
+    const base = parts.length
+      ? `Imported ${parts.join(', ')}.`
+      : 'Nothing new — everything in that file was already here.';
+
+    // Each collection's id index is one sync item with an 8 KB cap, so a very
+    // large file is truncated rather than failing outright. Say what was left.
+    const skipped = counts.skipped || {};
+    const dropped = EXPORT_TYPES
+      .filter(t => skipped[t] > 0)
+      .map(t => plural(skipped[t], t.slice(0, -1)));
+    return dropped.length
+      ? `${base} ${dropped.join(', ')} skipped — no room left in sync storage.`
+      : base;
+  }
 
   importFileInput.addEventListener('change', async e => {
     const file = e.target.files[0];
@@ -1723,31 +2224,50 @@
 
     // Reject excessively large files before reading into memory (A05).
     if (file.size > MAX_IMPORT_BYTES) {
-      showToast('Import file too large (max 5 MB).');
+      showToast('Import file too large (max 5 MB).', 'error');
       importFileInput.value = '';
       return;
     }
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      // Require a top-level array or an object with an array .bookmarks field.
-      // Reject any other structure before touching the background (A08).
-      const bookmarks = Array.isArray(data)
-        ? data
-        : (data && typeof data === 'object' && Array.isArray(data.bookmarks) ? data.bookmarks : null);
-      if (!bookmarks || !bookmarks.length) { showToast('No bookmarks found in file.'); return; }
-      // Cap the number of entries to prevent resource exhaustion (CWE-400).
-      if (bookmarks.length > MAX_IMPORT_COUNT) {
-        showToast(`Import file too large (max ${MAX_IMPORT_COUNT} bookmarks).`);
+      const text   = await file.text();
+      const isHtml = /\.html?$/i.test(file.name) || /^\s*<!DOCTYPE NETSCAPE-Bookmark/i.test(text);
+      const data   = isHtml ? parseNetscapeHtml(text) : parseTagmarkJson(text);
+
+      if (!data) {
+        showToast(isHtml ? 'No bookmarks found in that file.' : 'Import failed — unrecognised file.', 'error');
         importFileInput.value = '';
         return;
       }
-      const result = await chrome.runtime.sendMessage({ action: 'import-bookmarks', bookmarks });
-      showToast(`Imported ${result.count} bookmarks.`);
+
+      const total = EXPORT_TYPES.reduce((sum, t) => sum + data[t].length, 0);
+      if (!total) {
+        showToast('Nothing to import in that file.', 'error');
+        importFileInput.value = '';
+        return;
+      }
+
+      // Cap each type to prevent resource exhaustion (CWE-400).
+      if (EXPORT_TYPES.some(t => data[t].length > MAX_IMPORT_COUNT)) {
+        showToast(`Import file too large (max ${MAX_IMPORT_COUNT} entries per type).`, 'error');
+        importFileInput.value = '';
+        return;
+      }
+
+      const result = await chrome.runtime.sendMessage({ action: 'import-data', data });
+      // The background reports failures by resolving with { error }, not by
+      // rejecting, so this has to be checked explicitly — otherwise a failed
+      // import reads as "nothing new to import". A collection may already have
+      // been written before the failure, so reload either way.
+      if (!result || result.error) {
+        showToast((result && result.error) || 'Import failed.', 'error');
+      } else {
+        showToast(summarizeImport(result.counts));
+      }
       await loadAllObjects();
-    } catch {
-      showToast('Import failed — invalid JSON.');
+    } catch (err) {
+      console.error('[TagMark] import failed:', err);
+      showToast('Import failed — could not read that file.', 'error');
     }
     importFileInput.value = '';
   });

@@ -68,8 +68,10 @@ All data operations go through the background service worker via `chrome.runtime
 | `update-bookmark` | `{ bookmark }` | Updates existing bookmark |
 | `toggle-pin` | `{ id }` | Toggles pinned state |
 | `get-all-tags` | — | Returns sorted unique tags array |
-| `import-bookmarks` | `{ bookmarks }` | Merges with existing (dedupes by URL) |
+| `import-bookmarks` | `{ bookmarks }` | Legacy bookmarks-only merge (dedupes by URL) |
 | `export-bookmarks` | — | Returns all bookmarks for export |
+| `export-data` | `{ include? }` | Returns `{ bookmarks, notes, tasks, folders }`; `include` names which types to read |
+| `import-data` | `{ data }` | Merges any combination of the four types; returns `{ counts }` |
 | `get-settings` | — | Returns `{ theme }` |
 | `save-settings` | `{ settings }` | Persists `{ theme }` |
 
@@ -213,8 +215,10 @@ There is currently no automated test suite. Manual testing checklist:
 - Dashboard: filter by tag, filter pinned, search
 - Dashboard: sort all 4 directions
 - Dashboard: edit bookmark, toggle pin, delete
-- Export bookmarks as JSON
-- Import JSON file (merge behavior)
+- Export: each format (JSON, HTML, Markdown) and each scope (Everything / current view)
+- Export: unchecking a type leaves it out; HTML warns that notes and tasks are dropped
+- Import JSON (merge behavior), including a file exported by an older version
+- Import a Netscape HTML file exported from Chrome or Firefox (folders and tags survive)
 - Dashboard updates in real-time when popup saves a bookmark
 
 ---
